@@ -1,0 +1,1 @@
+This is an ads market simulator, meant to model user behavior, advertiser behavior and develop intuition and strategies for a marketplace. It's also meant to show how an AI-assisted marketplace can be far more efficient than one developed purely by hand.
