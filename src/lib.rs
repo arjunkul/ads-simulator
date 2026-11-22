@@ -1,6 +1,5 @@
 //! Synthetic marketplace data for Recipes and SimRuns.
 
-mod preference;
 mod taxonomy;
 
 use std::collections::HashSet;
@@ -10,8 +9,6 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use taxonomy::TAXONOMY;
-
-pub use preference::{PreferenceProfile, PreferenceWeights, ScoredItem, score_preference};
 
 const ADVERTISER_COUNT: usize = 50;
 const CATALOG_SIZE: usize = 20;
@@ -62,9 +59,6 @@ pub struct Item {
 pub struct User {
     pub id: String,
     pub preferred_category_ids: Vec<String>,
-    pub shopping_style: String,
-    #[serde(default)]
-    pub preference: PreferenceProfile,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -80,6 +74,15 @@ pub struct BrowsingEvent {
 pub enum BrowseReason {
     Affinity,
     Exploration,
+}
+
+/// Return 1 for an item in a preferred category, or 0 for any other item.
+pub fn score_preference(user: &User, item: &Item) -> f64 {
+    if user.preferred_category_ids.contains(&item.category_id) {
+        1.0
+    } else {
+        0.0
+    }
 }
 
 /// Generate the schema v1 baseline from a reproducible signed seed.
@@ -174,55 +177,31 @@ fn generate_browsing(
 ) -> (Vec<User>, Vec<BrowsingEvent>) {
     let mut users = Vec::with_capacity(USER_COUNT);
     let mut events = Vec::with_capacity(USER_COUNT * (AFFINITY_VIEWS + EXPLORATION_VIEWS));
-    let mut profiles = HashSet::with_capacity(USER_COUNT);
-    let weights = PreferenceWeights::default();
-    let shopping_styles = ["researcher", "deal_seeker", "casual"];
+    let mut preference_sets = HashSet::with_capacity(USER_COUNT);
 
     for number in 1..=USER_COUNT {
         let user_id = format!("user-{number:04}");
-        let mut interests = index::sample(rng, categories.len(), INTEREST_COUNT).into_vec();
-        interests.sort_unstable();
+        let interests = loop {
+            let mut sample = index::sample(rng, categories.len(), INTEREST_COUNT).into_vec();
+            sample.sort_unstable();
+            if preference_sets.insert(sample.clone()) {
+                break sample;
+            }
+        };
         let outside_interests: Vec<_> = (0..categories.len())
             .filter(|category| !interests.contains(category))
             .collect();
 
-        let preference = loop {
-            let profile = PreferenceProfile {
-                item_budget_cents: rng.random_range(2_000..=30_000),
-                price_sensitivity_pct: rng.random_range(0..=100),
-                ad_receptiveness_pct: rng.random_range(0..=100),
-            };
-            if profiles.insert(profile) {
-                break profile;
-            }
-        };
         let user = User {
             id: user_id.clone(),
             preferred_category_ids: interests
                 .iter()
                 .map(|&i| categories[i].id.clone())
                 .collect(),
-            shopping_style: shopping_styles[rng.random_range(0..shopping_styles.len())].into(),
-            preference,
         };
-        let ranked_sample = |rng: &mut ChaCha8Rng, category_indices: &[usize], views: usize| {
-            // Rank a limited random slate so browsing still varies within each category.
-            let mut candidates: Vec<_> = sample_organic_items(rng, category_indices, views * 3)
-                .map(|item_index| {
-                    let score = score_preference(
-                        &user,
-                        ScoredItem::Organic(&organic_items[item_index]),
-                        weights,
-                    );
-                    (item_index, score)
-                })
-                .collect();
-            candidates.sort_by(|(_, left), (_, right)| right.total_cmp(left));
-            candidates.into_iter().take(views).map(|(index, _)| index)
-        };
-        let affinity = ranked_sample(rng, &interests, AFFINITY_VIEWS)
+        let affinity = sample_organic_items(rng, &interests, AFFINITY_VIEWS)
             .map(|item_index| (item_index, BrowseReason::Affinity));
-        let exploration = ranked_sample(rng, &outside_interests, EXPLORATION_VIEWS)
+        let exploration = sample_organic_items(rng, &outside_interests, EXPLORATION_VIEWS)
             .map(|item_index| (item_index, BrowseReason::Exploration));
         let mut views: Vec<_> = affinity.chain(exploration).collect();
         views.shuffle(rng);

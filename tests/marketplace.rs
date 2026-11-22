@@ -3,8 +3,7 @@ use std::fs;
 use std::process::Command;
 
 use ads_simulator::{
-    BrowseReason, Item, Marketplace, PreferenceProfile, PreferenceWeights, ScoredItem, User,
-    generate_marketplace, score_preference,
+    BrowseReason, Item, Marketplace, User, generate_marketplace, score_preference,
 };
 
 #[test]
@@ -30,7 +29,7 @@ fn generates_the_requested_inventory_and_personas() {
     assert_eq!(
         data.users
             .iter()
-            .map(|user| user.preference)
+            .map(|user| &user.preferred_category_ids)
             .collect::<HashSet<_>>()
             .len(),
         data.users.len(),
@@ -138,79 +137,35 @@ fn every_user_browses_distinct_organic_items_with_affinity_and_exploration() {
 }
 
 #[test]
-fn scores_use_each_users_interests_budget_and_ad_receptiveness() {
-    let user_json =
-        r#"{"id":"a","preferred_category_ids":["books"],"shopping_style":"researcher"}"#;
-    let mut reader: User = serde_json::from_str(user_json).unwrap();
-    assert_eq!(reader.preference, PreferenceProfile::default());
-    reader.preference.price_sensitivity_pct = 100;
-    reader.preference.ad_receptiveness_pct = 0;
-    let mut player = User {
+fn only_an_items_category_affects_preference() {
+    let former_user = r#"{
+        "id": "a", "preferred_category_ids": ["books"], "shopping_style": "researcher",
+        "preference": {"item_budget_cents": 1000, "price_sensitivity_pct": 100, "ad_receptiveness_pct": 0}
+    }"#;
+    let reader: User = serde_json::from_str(former_user).unwrap();
+    assert_eq!(
+        serde_json::to_value(&reader).unwrap(),
+        serde_json::json!({"id": "a", "preferred_category_ids": ["books"]})
+    );
+    let player = User {
         id: "b".into(),
         preferred_category_ids: vec!["games".into()],
-        preference: PreferenceProfile {
-            item_budget_cents: 30_000,
-            ad_receptiveness_pct: 100,
-            ..reader.preference
-        },
-        shopping_style: "casual".into(),
     };
-    let book = Item {
-        id: "book".into(),
+    let organic_book = Item {
+        id: "organic-book".into(),
         category_id: "books".into(),
         name: "Book".into(),
-        price_cents: 20_000,
+        price_cents: 1_000,
     };
-    let game = Item {
-        id: "game".into(),
-        category_id: "games".into(),
-        name: "Game".into(),
-        price_cents: 20_000,
+    let ad_book = Item {
+        id: "ad-book".into(),
+        price_cents: 10_000,
+        category_id: organic_book.category_id.clone(),
+        name: organic_book.name.clone(),
     };
-
-    let weights = PreferenceWeights {
-        item_variation: 0,
-        ..PreferenceWeights::default()
-    };
-    let organic = |user: &User, item| score_preference(user, ScoredItem::Organic(item), weights);
-    let ad = |user: &User, item| score_preference(user, ScoredItem::Ad(item), weights);
-    assert!(organic(&reader, &book) > organic(&reader, &game));
-    assert!(organic(&player, &game) > organic(&player, &book));
-    assert!(ad(&reader, &book) < organic(&reader, &book));
-    assert!(ad(&player, &book) > organic(&player, &book));
-
-    let price_only = PreferenceWeights {
-        category_affinity: 0,
-        affordability: 1,
-        item_variation: 0,
-        ad_receptiveness: 0,
-    };
-    assert_eq!(
-        score_preference(&reader, ScoredItem::Organic(&book), price_only),
-        0.5
-    );
-    assert_eq!(
-        score_preference(&player, ScoredItem::Ad(&book), price_only),
-        1.0
-    );
-    let variation_only = PreferenceWeights {
-        affordability: 0,
-        item_variation: 1,
-        ..price_only
-    };
-    let variation =
-        |user: &User| score_preference(user, ScoredItem::Organic(&book), variation_only);
-    assert_eq!(variation(&reader), variation(&reader));
-    assert_ne!(variation(&reader), variation(&player));
-
-    player.preference.price_sensitivity_pct = u8::MAX;
-    player.preference.ad_receptiveness_pct = u8::MAX;
-    for item in [ScoredItem::Ad(&book), ScoredItem::Organic(&game)] {
-        assert!((0.0..=1.0).contains(&score_preference(
-            &player,
-            item,
-            PreferenceWeights::default()
-        )));
+    for book in [organic_book, ad_book] {
+        assert_eq!(score_preference(&reader, &book), 1.0);
+        assert_eq!(score_preference(&player, &book), 0.0);
     }
 }
 

@@ -3,7 +3,7 @@ use std::{
     io::{Error, ErrorKind},
 };
 
-use ads_simulator::{Item, Marketplace, PreferenceWeights, ScoredItem, User, score_preference};
+use ads_simulator::{Item, Marketplace, User, score_preference};
 use rand::{
     Rng, SeedableRng,
     seq::{IndexedRandom, SliceRandom},
@@ -209,7 +209,6 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
     let mut no_matching_category = 0;
     let mut insufficient_budget = 0;
     let mut order: Vec<_> = (0..opportunities.len()).collect();
-    let weights = PreferenceWeights::default();
     for day in 1..=DAYS {
         let quota = config.impressions.map(|target| {
             let days = DAYS as u64;
@@ -240,8 +239,7 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
                 }
                 let index = rng.random_range(0..eligible.len());
                 let campaign = &mut campaigns[eligible[index]];
-                let score =
-                    score_preference(opportunity.user, ScoredItem::Ad(campaign.item), weights);
+                let score = score_preference(opportunity.user, campaign.item);
                 let cost = rng
                     .random_bool(MAX_CLICK_PROBABILITY * score)
                     .then_some(config.cpc_cents);
@@ -299,7 +297,7 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
 mod tests {
     use std::collections::{HashMap, HashSet};
 
-    use ads_simulator::generate_marketplace;
+    use ads_simulator::{BrowseReason, generate_marketplace};
 
     use super::{Activity, CAMPAIGNS_PER_ADVERTISER, Config, DAYS, run};
 
@@ -314,6 +312,28 @@ mod tests {
         activity.impression(Some(73));
         assert_eq!(activity.clicks, 1);
         assert_eq!(activity.spend_cents, 73);
+    }
+
+    #[test]
+    fn ads_outside_preferred_categories_never_receive_clicks() {
+        let mut marketplace = generate_marketplace(42);
+        marketplace
+            .browsing_events
+            .retain(|event| event.reason == BrowseReason::Exploration);
+        let report = run(
+            &marketplace,
+            Config {
+                seed: 42,
+                campaign_budget_cents: 10_000,
+                cpc_cents: 100,
+                impressions: Some(3_000),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(report.summary.activity.impressions, 3_000);
+        assert_eq!(report.summary.activity.clicks, 0);
+        assert_eq!(report.summary.activity.spend_cents, 0);
     }
 
     #[test]
