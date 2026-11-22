@@ -121,13 +121,17 @@ def generate_marketplace(seed: int) -> dict:
 
     users = []
     browsing_events = []
+    preference_sets = set()
     for number in range(1, USER_COUNT + 1):
         user_id = f"user-{number:04d}"
-        interests = sorted(rng.sample(category_ids, INTEREST_COUNT))
+        while True:
+            interests = tuple(sorted(rng.sample(category_ids, INTEREST_COUNT)))
+            if interests not in preference_sets:
+                preference_sets.add(interests)
+                break
         users.append({
             "id": user_id,
-            "preferred_category_ids": interests,
-            "shopping_style": rng.choice(("researcher", "deal_seeker", "casual")),
+            "preferred_category_ids": list(interests),
         })
         interested_ids = set(interests)
         affinity_pool = [

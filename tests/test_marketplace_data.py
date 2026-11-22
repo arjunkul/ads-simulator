@@ -40,6 +40,10 @@ class MarketplaceDataTest(unittest.TestCase):
         organic = {item["id"]: item for item in self.data["organic_items"]}
         self.assertEqual(len(self.data["users"]), 1000)
         self.assertEqual(len(users), 1000)
+        self.assertEqual(
+            len({tuple(user["preferred_category_ids"]) for user in users.values()}), 1000
+        )
+        self.assertTrue(all(user.keys() == {"id", "preferred_category_ids"} for user in users.values()))
         self.assertEqual(len(self.data["browsing_events"]), 12000)
         by_user = defaultdict(list)
         for event in self.data["browsing_events"]:
