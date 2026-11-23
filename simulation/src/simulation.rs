@@ -93,25 +93,20 @@ pub struct Report<'a> {
     campaigns: Vec<Campaign<'a>>,
 }
 
-struct Opportunity<'a> {
-    category_id: &'a str,
-    user: &'a User,
-}
-
 fn invalid(message: impl Into<String>) -> Error {
     Error::new(ErrorKind::InvalidInput, message.into())
 }
 
-fn browsing_opportunities(marketplace: &Marketplace) -> Result<Vec<Opportunity<'_>>, Error> {
+fn browsing_opportunities(marketplace: &Marketplace) -> Result<Vec<&User>, Error> {
     let users: HashMap<_, _> = marketplace
         .users
         .iter()
         .map(|user| (&user.id, user))
         .collect();
-    let items: HashMap<_, _> = marketplace
+    let items: HashSet<_> = marketplace
         .organic_items
         .iter()
-        .map(|item| (&item.id, item))
+        .map(|item| &item.id)
         .collect();
     if users.len() != marketplace.users.len() || items.len() != marketplace.organic_items.len() {
         return Err(invalid("duplicate user or organic item IDs"));
@@ -124,13 +119,13 @@ fn browsing_opportunities(marketplace: &Marketplace) -> Result<Vec<Opportunity<'
             let user = users
                 .get(&browse.user_id)
                 .ok_or_else(|| invalid(format!("unknown browsing user {}", browse.user_id)))?;
-            let item = items.get(&browse.organic_item_id).ok_or_else(|| {
-                invalid(format!("unknown browsing item {}", browse.organic_item_id))
-            })?;
-            Ok(Opportunity {
-                category_id: &item.category_id,
-                user,
-            })
+            if !items.contains(&browse.organic_item_id) {
+                return Err(invalid(format!(
+                    "unknown browsing item {}",
+                    browse.organic_item_id
+                )));
+            }
+            Ok(*user)
         })
         .collect()
 }
@@ -188,25 +183,28 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
         return Err(invalid("CPC must be positive"));
     }
 
-    let mut rng = ChaCha8Rng::seed_from_u64(config.seed);
+    let mut ads_rng = ChaCha8Rng::seed_from_u64(config.seed);
+    let mut browsing_rng = ads_rng.clone();
+    browsing_rng.set_stream(1);
+    let mut click_rng = ads_rng.clone();
+    click_rng.set_stream(2);
+
     let opportunities = browsing_opportunities(marketplace)?;
-    let mut campaigns = initialize_campaigns(marketplace, config, &mut rng)?;
+    let mut campaigns = initialize_campaigns(marketplace, config, &mut ads_rng)?;
     let budget_cents = config
         .campaign_budget_cents
         .checked_mul(campaigns.len() as u64)
         .ok_or_else(|| invalid("total campaign budget does not fit in the report"))?;
-    let mut active: HashMap<&str, Vec<usize>> = HashMap::new();
-    for (i, campaign) in campaigns.iter().enumerate() {
-        let eligible = active.entry(campaign.category_id).or_default();
-        if campaign.remaining_budget_cents >= config.cpc_cents {
-            eligible.push(i);
-        }
-    }
+    let mut active: Vec<_> = campaigns
+        .iter()
+        .enumerate()
+        .filter(|(_, campaign)| campaign.remaining_budget_cents >= config.cpc_cents)
+        .map(|(index, _)| index)
+        .collect();
 
     let mut days = Vec::with_capacity(DAYS);
     let mut totals = Activity::default();
     let mut opportunity_count = 0;
-    let mut no_matching_category = 0;
     let mut insufficient_budget = 0;
     let mut order: Vec<_> = (0..opportunities.len()).collect();
     for day in 1..=DAYS {
@@ -224,29 +222,24 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
         while quota != Some(daily.activity.impressions) {
             let impressions_before_pass = daily.activity.impressions;
             if quota.is_some() {
-                order.shuffle(&mut rng);
+                order.shuffle(&mut browsing_rng);
             }
             for &slot in &order {
-                let opportunity = &opportunities[slot];
                 daily.opportunities += 1;
-                let Some(eligible) = active.get_mut(opportunity.category_id) else {
-                    daily.no_matching_category += 1;
-                    continue;
-                };
-                if eligible.is_empty() {
+                if active.is_empty() {
                     daily.insufficient_budget += 1;
                     continue;
                 }
-                let index = rng.random_range(0..eligible.len());
-                let campaign = &mut campaigns[eligible[index]];
-                let score = score_preference(opportunity.user, campaign.item);
-                let cost = rng
+                let index = ads_rng.random_range(0..active.len());
+                let campaign = &mut campaigns[active[index]];
+                let score = score_preference(opportunities[slot], campaign.item);
+                let cost = click_rng
                     .random_bool(MAX_CLICK_PROBABILITY * score)
                     .then_some(config.cpc_cents);
                 if let Some(cost) = cost {
                     campaign.remaining_budget_cents -= cost;
                     if campaign.remaining_budget_cents < config.cpc_cents {
-                        eligible.swap_remove(index);
+                        active.swap_remove(index);
                     }
                 }
                 campaign.totals.impression(cost);
@@ -264,14 +257,13 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
                 return Err(invalid(format!(
                     concat!(
                         "impression target cannot be reached on day {}: ",
-                        "no funded campaigns match the browsing opportunities ({} impressions delivered)"
+                        "no browsing opportunities or no campaigns that can afford the CPC ({} impressions delivered)"
                     ),
                     day, totals.impressions,
                 )));
             }
         }
         opportunity_count += daily.opportunities;
-        no_matching_category += daily.no_matching_category;
         insufficient_budget += daily.insufficient_budget;
         days.push(daily);
     }
@@ -284,7 +276,7 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
             budget_cents,
             remaining_budget_cents: budget_cents - totals.spend_cents,
             opportunities: opportunity_count,
-            no_matching_category,
+            no_matching_category: 0,
             insufficient_budget,
             activity: totals,
         },
@@ -297,7 +289,7 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
 mod tests {
     use std::collections::{HashMap, HashSet};
 
-    use ads_simulator::{BrowseReason, generate_marketplace};
+    use ads_simulator::generate_marketplace;
 
     use super::{Activity, CAMPAIGNS_PER_ADVERTISER, Config, DAYS, run};
 
@@ -317,23 +309,70 @@ mod tests {
     #[test]
     fn ads_outside_preferred_categories_never_receive_clicks() {
         let mut marketplace = generate_marketplace(42);
-        marketplace
-            .browsing_events
-            .retain(|event| event.reason == BrowseReason::Exploration);
-        let report = run(
-            &marketplace,
-            Config {
-                seed: 42,
-                campaign_budget_cents: 10_000,
-                cpc_cents: 100,
-                impressions: Some(3_000),
-            },
-        )
-        .unwrap();
+        let config = Config {
+            seed: 42,
+            campaign_budget_cents: 10_000,
+            cpc_cents: 100,
+            impressions: Some(3_000),
+        };
+        let initial = run(&marketplace, config).unwrap();
+        assert!(initial.summary.activity.clicks > 0);
+        // No campaign can exhaust its budget at this scale for this seed.
+        assert!(
+            initial
+                .campaigns
+                .iter()
+                .all(|campaign| campaign.remaining_budget_cents >= 100)
+        );
+        let initial_deliveries: Vec<_> = initial
+            .campaigns
+            .iter()
+            .map(|campaign| campaign.totals.impressions)
+            .collect();
 
+        for user in &mut marketplace.users {
+            user.preferred_category_ids = vec!["no-campaign-category".to_owned()];
+        }
+        let report = run(&marketplace, config).unwrap();
         assert_eq!(report.summary.activity.impressions, 3_000);
         assert_eq!(report.summary.activity.clicks, 0);
         assert_eq!(report.summary.activity.spend_cents, 0);
+        assert!(
+            report
+                .campaigns
+                .iter()
+                .zip(initial_deliveries)
+                .all(|(campaign, expected)| campaign.totals.impressions == expected)
+        );
+    }
+
+    #[test]
+    fn changing_the_organic_category_does_not_change_ad_delivery() {
+        let mut marketplace = generate_marketplace(42);
+        marketplace.advertisers.truncate(1);
+        let ad_category = marketplace.advertisers[0].catalog[0].category_id.clone();
+        for item in &mut marketplace.advertisers[0].catalog {
+            item.category_id.clone_from(&ad_category);
+        }
+        for item in &mut marketplace.organic_items {
+            item.category_id.clone_from(&ad_category);
+        }
+        let config = Config {
+            seed: 42,
+            campaign_budget_cents: 10_000,
+            cpc_cents: 100,
+            impressions: Some(300),
+        };
+        let matching = run(&marketplace, config).unwrap();
+        let matching_json = serde_json::to_value(matching).unwrap();
+
+        for item in &mut marketplace.organic_items {
+            item.category_id = "different-organic-category".to_owned();
+        }
+        let mismatched = run(&marketplace, config).unwrap();
+        assert_eq!(mismatched.summary.activity.impressions, 300);
+        assert_eq!(mismatched.summary.no_matching_category, 0);
+        assert_eq!(serde_json::to_value(mismatched).unwrap(), matching_json);
     }
 
     #[test]
