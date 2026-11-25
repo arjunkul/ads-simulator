@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ads Marketplace Simulator — Feature, Flowchart &amp; Analyzer Dashboard</title>
+  <style>/*__INLINE_CSS__*/</style>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero">
+      <div>
+        <h1>Ads Marketplace Simulator Dashboard</h1>
+        <p class="hero-subtitle">
+          Live code-derived inventory of all 11 simulator pieces across 7 crates — featuring the user-independent
+          <code>impression-generator</code>, standalone <code>ad-server</code> (Ranker Strategy <code>R1</code>: 20 random budgeted campaigns),
+          <code>simulation-analyzer</code>, and interactive 30-day <code>sim-agent</code> budget runner &amp; SVG plotter.
+        </p>
+      </div>
+      <div class="hero-badges" id="hero-badges">
+        <span class="badge" id="badge-version">v0.1.0</span>
+        <span class="badge badge-emerald" id="badge-schema">Schema v1 · USD</span>
+        <span class="badge badge-amber" id="badge-ranker">Ranker R1 · 20 Ads/Req</span>
+        <span class="badge badge-indigo" id="badge-mode">Live Server</span>
+      </div>
+    </header>
+
+    <section aria-label="Key Simulator Metrics" class="kpi-grid" id="kpi-strip"></section>
+
+    <section class="section-card" aria-labelledby="pipeline-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="pipeline-heading">Component Interaction Flowchart</h2>
+          <p class="section-desc">
+            End-to-end runtime flowchart of how all 7 crates, 11 simulator pieces, decision branches, the user-independent impression generator, Ad-Server (R1), Simulation Analyzer, and live feedback loops interact.
+          </p>
+        </div>
+        <div class="filter-pills" id="flowchart-view-toggle" role="tablist" aria-label="Architecture diagram view">
+          <button type="button" class="pill-btn active" id="view-flowchart-btn" role="tab" aria-selected="true">Interaction Flowchart</button>
+          <button type="button" class="pill-btn" id="view-pipeline-btn" role="tab" aria-selected="false">11-Piece Dataflow</button>
+        </div>
+      </div>
+
+      <div class="controls-bar flowchart-toolbar" id="flowchart-trace-bar">
+        <span class="toolbar-label">Highlight flow:</span>
+        <div class="filter-pills" id="flowchart-trace-pills" role="group" aria-label="Highlight execution flow"></div>
+        <div class="flowchart-legend" aria-label="Flowchart legend">
+          <span class="legend-item"><span class="legend-swatch swatch-data"></span>Dataflow</span>
+          <span class="legend-item"><span class="legend-swatch swatch-decision"></span>Decision</span>
+          <span class="legend-item"><span class="legend-swatch swatch-loop"></span>Feedback / Loop</span>
+        </div>
+      </div>
+
+      <div class="pipeline-wrap" id="pipeline-container"></div>
+
+      <div class="flowchart-inspector" id="flowchart-inspector" aria-live="polite">
+        <div class="inspector-main">
+          <div class="inspector-title-row">
+            <strong id="inspector-title">Select any component or decision node in the flowchart</strong>
+            <span class="badge hidden" id="inspector-crate"></span>
+          </div>
+          <p class="inspector-desc" id="inspector-desc">
+            Click any box or decision diamond above to trace incoming/outgoing connections, data contracts, and jump directly to its compiled parameters and features.
+          </p>
+          <div class="inspector-io hidden" id="inspector-io"></div>
+        </div>
+        <div class="inspector-actions">
+          <button type="button" class="btn hidden" id="inspector-jump-btn">Jump to Feature Card</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-card" aria-labelledby="pieces-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="pieces-heading">Per-Piece Feature &amp; Gap Explorer</h2>
+          <p class="section-desc" id="pieces-count-desc">Showing all 11 simulator pieces</p>
+        </div>
+      </div>
+      <div class="controls-bar">
+        <input
+          type="search"
+          id="piece-search"
+          class="search-input"
+          aria-label="Search simulator pieces and features"
+          placeholder="Search pieces, features, parameters, crates, or gaps..."
+        >
+        <div class="filter-pills" id="stage-filters" role="group" aria-label="Filter by pipeline stage"></div>
+        <button type="button" class="btn" id="clear-filters-btn">Clear</button>
+      </div>
+      <div class="pieces-grid" id="pieces-grid"></div>
+      <div class="empty-state hidden" id="pieces-empty">
+        <p>No simulator pieces match your search filter.</p>
+        <button type="button" class="btn" id="reset-empty-btn">Reset Search &amp; Filters</button>
+      </div>
+    </section>
+
+    <section class="section-card" aria-labelledby="budget-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="budget-heading">30-Day Budget Spend &amp; Live <code>sim-agent</code> Runner</h2>
+          <p class="section-desc" id="sim-run-meta">Loading 30-day simulation summary...</p>
+        </div>
+      </div>
+
+      <div id="static-runner-note" class="alert-info hidden">
+        Viewing static offline bundle. Start <code>ads-simulator-dashboard</code> in server mode to run new live simulations.
+      </div>
+
+      <form id="sim-runner-form" class="runner-form">
+        <div class="runner-field">
+          <label for="runner-marketplace-seed">Marketplace Seed</label>
+          <input id="runner-marketplace-seed" name="marketplace_seed" type="number" step="1" value="42">
+        </div>
+        <div class="runner-field">
+          <label for="runner-seed">Simulation Seed</label>
+          <input id="runner-seed" name="seed" type="number" step="1" min="0" value="42">
+        </div>
+        <div class="runner-field">
+          <label for="runner-budget">Campaign Budget (cents, blank = random $1k–$10k)</label>
+          <input id="runner-budget" name="campaign_budget_cents" type="number" step="1" min="0" placeholder="Random $1,000–$10,000">
+        </div>
+        <div class="runner-field">
+          <label for="runner-cpc">CPC (cents)</label>
+          <input id="runner-cpc" name="cpc_cents" type="number" step="1" min="1" value="100">
+        </div>
+        <div class="runner-field">
+          <label for="runner-impressions">Target Impressions</label>
+          <input id="runner-impressions" name="impressions" type="number" step="1" min="0" value="1000000">
+        </div>
+        <div class="runner-field">
+          <label for="runner-ranker">Ads-Ranker Strategy</label>
+          <select id="runner-ranker" name="ranker">
+            <option value="R1" selected>R1 (20 Random Budgeted)</option>
+            <option value="R2">R2 (Online CTR · UCB1 + ε-greedy)</option>
+          </select>
+        </div>
+        <div class="runner-field">
+          <label for="runner-slate-size">Slate Size</label>
+          <input id="runner-slate-size" name="slate_size" type="number" step="1" min="1" max="500" value="20">
+        </div>
+        <div class="runner-field">
+          <label class="runner-checkbox" for="runner-natural">
+            <input id="runner-natural" name="natural_replay" type="checkbox">
+            <span>Natural Requests (no target)</span>
+          </label>
+        </div>
+        <div class="runner-actions">
+          <button type="submit" id="runner-submit" class="btn btn-primary">Run Simulation</button>
+        </div>
+      </form>
+
+      <div id="runner-error" class="alert-error hidden" role="alert"></div>
+
+      <div class="stats-row" id="budget-kpis"></div>
+
+      <div class="plot-frame">
+        <img
+          id="budget-svg-img"
+          class="plot-img"
+          alt="30-day budget spent dual-panel chart generated by sim-agent"
+        >
+      </div>
+
+      <div class="table-scroll">
+        <table aria-label="30-day daily budget spend breakdown">
+          <thead>
+            <tr>
+              <th>Day</th>
+              <th>Impressions</th>
+              <th>Clicks</th>
+              <th>Daily Spend</th>
+              <th>Cumulative Spend</th>
+              <th>Remaining Budget</th>
+              <th>Utilization</th>
+              <th>Active Campaigns</th>
+              <th>Insufficient Budget Slots</th>
+            </tr>
+          </thead>
+          <tbody id="daily-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section-card" id="analysis-section" aria-labelledby="analysis-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="analysis-heading">Automated Simulation Analyzer (<code>simulation-analyzer</code>)</h2>
+          <p class="section-desc" id="analysis-meta">
+            Auto-computed budget depletion milestones, average &amp; daily CTR efficiency, eCPM, campaign Gini spend concentration, and diagnostic findings.
+          </p>
+        </div>
+      </div>
+
+      <div class="stats-row" id="analysis-kpis"></div>
+
+      <div id="analysis-findings" class="findings-list"></div>
+
+      <div class="table-scroll" id="analysis-top-campaigns-wrap">
+        <table aria-label="Top campaigns by spend">
+          <thead>
+            <tr>
+              <th>Campaign</th>
+              <th>Advertiser</th>
+              <th>Category</th>
+              <th>Impressions</th>
+              <th>Clicks</th>
+              <th>CTR</th>
+              <th>Spend</th>
+              <th>Utilization</th>
+            </tr>
+          </thead>
+          <tbody id="analysis-top-campaigns-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section-card" id="ad-server-section" aria-labelledby="ad-server-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="ad-server-heading">Live Ad-Server (<code>ad-server</code> · Strategy R1)</h2>
+          <p class="section-desc">
+            Query <code>AdServer::serve_ads(user_id)</code> to inspect the set of up to 20 ads from distinct funded campaigns returned under Ranker Strategy R1.
+          </p>
+        </div>
+      </div>
+
+      <form id="ad-server-form" class="marketplace-toolbar">
+        <label for="ad-server-user-id">User ID:</label>
+        <input id="ad-server-user-id" name="ad_server_user_id" type="text" value="user-0001">
+        <label for="ad-server-seed">Seed:</label>
+        <input id="ad-server-seed" name="ad_server_seed" type="number" step="1" min="0" value="42">
+        <button type="submit" class="btn" id="ad-server-btn">Query Ad-Server (R1)</button>
+      </form>
+      <div id="ad-server-error" class="alert-error hidden" role="alert"></div>
+      <p class="section-desc" id="ad-server-summary"></p>
+
+      <div class="table-scroll">
+        <table aria-label="Ad-server R1 returned slate">
+          <thead>
+            <tr>
+              <th>Slot</th>
+              <th>Campaign ID</th>
+              <th>Advertiser</th>
+              <th>Ad Item</th>
+              <th>Category</th>
+              <th>CPC</th>
+            </tr>
+          </thead>
+          <tbody id="ad-server-slate-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section-card" aria-labelledby="marketplace-heading">
+      <div class="section-header">
+        <div>
+          <h2 id="marketplace-heading">Live 10&times;10 Taxonomy &amp; Marketplace Inspector</h2>
+          <p class="section-desc">
+            Inspect seeded entity counts, browsing affinity/exploration split, catalog and organic price stats, and all 100 categories.
+          </p>
+        </div>
+      </div>
+
+      <form id="marketplace-seed-form" class="marketplace-toolbar">
+        <label for="marketplace-inspect-seed">Inspect Seed:</label>
+        <input id="marketplace-inspect-seed" name="inspect_seed" type="number" step="1" value="42">
+        <button type="submit" class="btn" id="marketplace-inspect-btn">Inspect Marketplace</button>
+      </form>
+      <div id="marketplace-error" class="alert-error hidden" role="alert"></div>
+
+      <div class="stats-row" id="marketplace-stats"></div>
+      <div class="taxonomy-grid" id="taxonomy-grid"></div>
+    </section>
+  </div>
+
+  <script id="dashboard-bootstrap" type="application/json">/*__BOOTSTRAP_JSON__*/</script>
+  <script>/*__INLINE_JS__*/</script>
+</body>
+</html>

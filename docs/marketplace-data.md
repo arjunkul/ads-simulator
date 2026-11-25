@@ -9,8 +9,6 @@ cargo test --locked
 
 The command writes `marketplace.json` to the requested directory and replaces that file on a successful rerun. Use the same signed 64-bit seed and the locked build for reproducible data. SimRuns in Rust can consume the export or call `ads_simulator::generate_marketplace(seed)` directly.
 
-The original Python generator (`python3 marketplace_data.py --seed 42 --output-dir /tmp/ads-marketplace`) remains available for existing callers. It exports the same category-only baseline contract. Random realizations differ between the implementations.
-
 ## Dataset contract
 
 The top-level fields `schema_version`, `seed`, and `currency` identify the schema, random seed, and currency. All monetary amounts are integer US cents.
@@ -18,12 +16,12 @@ The top-level fields `schema_version`, `seed`, and `currency` identify the schem
 | Field | Contents |
 |---|---|
 | `categories` | 100 named product categories in ten groups. Each has a unique ID. |
-| `advertisers` | 50 synthetic merchants with a specialty, objective, daily budget, and 20 catalog items each. Their 1,000 catalog items share the taxonomy and have unique IDs. |
+| `advertisers` | 50 synthetic merchants with a specialty, daily budget, and 20 catalog items each. Their 1,000 catalog items share the taxonomy and have unique IDs. |
 | `users` | 1,000 synthetic shoppers, each with an ID and a unique set of five preferred categories. |
 | `organic_items` | 5,000 non-ad listings, 50 per category, with IDs distinct from advertiser catalog item IDs. |
 | `browsing_events` | 12,000 organic listing views. Each event contains a user ID, an organic item ID, a one-based position within that user's sequence, and a reason. |
 
-Older Rust and Python exports that include additional user fields remain readable by Rust. Newly generated records contain only `id` and `preferred_category_ids`.
+Older exports that include additional user or advertiser fields (such as legacy `objective`) remain readable by Rust. Newly generated user records contain only `id` and `preferred_category_ids`.
 
 ## Preference model
 

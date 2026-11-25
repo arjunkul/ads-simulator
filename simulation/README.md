@@ -1,24 +1,25 @@
 # 30-day CPC simulation
 
-From the repository root, generate the seeded marketplace and run the simulation.
+From the repository root, generate the seeded marketplace, run the 30-day simulation via the user-independent `impression-generator` + `ad-server` (Ranker Strategy **R1**), and auto-analyze the run.
 
 ```sh
 mkdir -p /tmp/ads-cpc
-cargo run --locked -- --seed 42 --output-dir /tmp/ads-cpc
-cargo run --release --locked --manifest-path simulation/Cargo.toml -- \
+cargo run --locked -p ads-simulator -- --seed 42 --output-dir /tmp/ads-cpc
+cargo run --release --locked -p ads-marketplace-simulation -- \
   --marketplace /tmp/ads-cpc/marketplace.json \
   --output /tmp/ads-cpc/simulation.json \
-  --seed 42 --campaign-budget-cents 10000 --cpc-cents 100 --impressions 1000000
-cargo test --locked --manifest-path simulation/Cargo.toml
+  --seed 42 --campaign-budget-cents 10000 --cpc-cents 100 --impressions 1000000 --ranker R1 --slate-size 20
+cargo run --release --locked -p simulation-analyzer -- \
+  --report /tmp/ads-cpc/simulation.json \
+  --output /tmp/ads-cpc/analysis.json
+cargo test --locked -p ads-marketplace-simulation
 ```
 
-## Delivery model
+## Decoupled delivery model
 
-- Each advertiser starts with ten campaigns. Each campaign uses one distinct ad item sampled from that advertiser's catalog with the simulation seed. In the baseline marketplace, this creates 500 campaigns.
-- At setup, each campaign gets a fixed budget for the entire run, independent of the advertiser's daily budget field. Both the initial budget and the campaign's CPC are configurable in USD cents. The defaults are $100 per campaign and $1 per click.
-- Each organic browse event supplies one ad opportunity. The simulator selects at most one campaign uniformly from all campaigns that can afford the CPC. The organic item and its category have no effect on which ad is shown. User preferences affect clicks only. Organic replay, ad selection, and click draws use separate streams from the same simulation seed.
-- A click has probability 4% if the ad belongs to one of the user's preferred categories and 0% otherwise. On a click, the campaign pays exactly the CPC. A campaign becomes ineligible when its remaining budget cannot afford another click.
-- The run lasts 30 days. With no impression target, it replays the supplied browsing events once each day in their original order. With a target, it splits the target as evenly as possible across 30 days, giving any remainder to the earliest days one impression at a time. It shuffles the browsing events for each pass and repeats as needed to meet the daily quota. If a pass delivers zero impressions before the quota is met, the run exits with an error.
-- The same marketplace JSON, seed, and campaign settings reproduce the same report with the locked dependencies and same build target.
-
-The JSON report contains the run configuration, totals, all 30 day summaries, and each campaign's ad item, upfront and remaining budgets, and daily impression, click, and spend counts. The daily and whole-run opportunity counters include both delivered impressions and skipped slots. `insufficient_budget` counts slots for which no campaign can afford the CPC. The legacy `no_matching_category` counter stays at zero.
+- **Campaign pool (`ad-server`):** Each advertiser starts with ten campaigns (500 total in the baseline), each promoting a distinct catalog item sampled with the simulation seed. By default, each campaign receives a deterministically randomized 30-day upfront budget between \$1,000 and \$10,000 (`--campaign-budget-min-cents 100000 --campaign-budget-max-cents 1000000`, or pass `--campaign-budget-cents <CENTS>` for a fixed override) and a flat CPC (default \$1).
+- **User-independent ad-impression generator (`impression-generator`):** Completely decoupled from shopper preferences and organic browsing events — it receives only the list of valid `user_ids`, samples a `user_id` uniformly on ChaCha8 Stream 1, and invokes `AdServer::serve_ads(user_id)`.
+- **Ad-Server & Ads-Ranker Strategy `R1` (`ad-server`):** `AdServer::serve_ads(user_id)` delegates to the pluggable `AdsRanker` trait. Strategy **R1** uniformly samples up to **20 distinct campaigns** (`--slate-size 20`) from all campaigns that currently have `remaining_budget_cents >= cpc_cents` (returning fewer if fewer than 20 campaigns remain funded, or an empty slate when all budgets exhaust).
+- **Shopper click evaluator (`ads-marketplace-simulation`):** For each served ad in the returned slate, a click occurs with probability **4%** if the ad belongs to one of the user's preferred categories (`score_preference == 1.0`) and **0%** otherwise (ChaCha8 Stream 2). Clicks deduct exact CPC via `AdServer::record_impression`, immediately retiring any campaign whose remaining budget drops below CPC in O(1) time.
+- **30-day horizon:** With no impression target, `impression-generator` issues 600 requests/day across 30 days (12,000 impressions/day = 360,000 impressions when at least 20 campaigns remain funded). With `--impressions`, the target is split evenly across 30 days (remainder +1 to earliest days). If all budgets exhaust before a daily target is met, the run exits with an error.
+- **Automated analysis (`simulation-analyzer`):** Computes budget depletion curves & exhaustion milestones, average/daily CTR & eCPM, campaign Gini concentration, top category/advertiser rollups, and diagnostic findings.
