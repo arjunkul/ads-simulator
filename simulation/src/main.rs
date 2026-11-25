@@ -8,7 +8,7 @@ use std::{
 };
 
 use clap::Parser;
-use simulation::{Config, run};
+use simulation::{Config, Strategy, run};
 use tempfile::NamedTempFile;
 
 #[derive(Parser)]
@@ -31,11 +31,36 @@ struct Args {
     /// Exact number of impressions to deliver across the 30 days.
     #[arg(long)]
     impressions: Option<u64>,
+    /// Ad selection / ranking strategy.
+    #[arg(long, value_enum, default_value_t = Strategy::Uniform)]
+    strategy: Strategy,
+    /// Directory where daily impression-click JSONL logs (`day-01.jsonl`, ...) are written.
+    /// Defaults to a sibling `<output_stem>-impressions` directory when `--strategy r1` is used.
+    #[arg(long)]
+    impression_log_dir: Option<PathBuf>,
+}
+
+fn default_log_dir(output: &Path) -> PathBuf {
+    let parent = output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let stem = output
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or("simulation");
+    parent.join(format!("{stem}-impressions"))
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let marketplace = serde_json::from_reader(BufReader::new(File::open(args.marketplace)?))?;
+    let impression_log_dir = match (args.strategy, args.impression_log_dir) {
+        (_, Some(dir)) => Some(dir),
+        (Strategy::R1, None) => Some(default_log_dir(&args.output)),
+        (Strategy::Uniform, None) => None,
+    };
     let report = run(
         &marketplace,
         Config {
@@ -43,6 +68,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             campaign_budget_cents: args.campaign_budget_cents,
             cpc_cents: args.cpc_cents,
             impressions: args.impressions,
+            strategy: args.strategy,
+            impression_log_dir,
         },
     )?;
 
