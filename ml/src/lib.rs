@@ -4,7 +4,7 @@ mod model;
 mod records;
 
 pub use model::{
-    CtrModel, LogisticRegressionModel, PreparedRanker, TrainingConfig, TrainingSummary,
+    CtrModel, LogisticRegressionModel, PreparedScorer, TrainingConfig, TrainingSummary,
 };
 pub use records::{
     AdCandidate, BorrowedImpressionClickRecord, DailyImpressionWriter, ImpressionClickRecord,

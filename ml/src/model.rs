@@ -476,12 +476,12 @@ impl LogisticRegressionModel {
     }
 
     /// Pre-index known users, categories, and candidate campaigns for fast repeated scoring.
-    pub fn prepare_ranker(
+    pub fn prepare_scorer(
         &self,
         user_ids: &[&str],
         category_ids: &[&str],
         candidates: &[AdCandidate<'_>],
-    ) -> PreparedRanker {
+    ) -> PreparedScorer {
         let category_index: HashMap<&str, usize> = category_ids
             .iter()
             .enumerate()
@@ -581,7 +581,7 @@ impl LogisticRegressionModel {
             UserCategoryTable::Sparse { rows }
         };
 
-        PreparedRanker {
+        PreparedScorer {
             same_category_weight: self.same_category_weight,
             user_base,
             campaign_base,
@@ -610,7 +610,7 @@ enum UserCategoryTable {
 
 /// Pre-indexed scorer for fast repeated candidate ranking over fixed user/category/campaign tables.
 #[derive(Clone, Debug)]
-pub struct PreparedRanker {
+pub struct PreparedScorer {
     same_category_weight: f64,
     user_base: Vec<f64>,
     campaign_base: Vec<f64>,
@@ -618,7 +618,7 @@ pub struct PreparedRanker {
     user_category_weights: UserCategoryTable,
 }
 
-impl PreparedRanker {
+impl PreparedScorer {
     /// Score the log-odds (monotone in predicted CTR) for `(user_idx, organic_cat_idx, campaign_idx)`.
     #[inline]
     pub fn score_logit(&self, user_idx: usize, organic_cat_idx: usize, campaign_idx: usize) -> f64 {
@@ -1201,10 +1201,10 @@ mod tests {
         // Unseen user benefits from learned positive same_category_weight on cat-a.
         assert_eq!(model.rank_candidates(&unseen_ctx, &candidates)[0], 0);
 
-        // PreparedRanker must match LogisticRegressionModel::predict_ctr exactly.
+        // PreparedScorer must match LogisticRegressionModel::predict_ctr exactly.
         let users = ["u1", "u2", "u3", "u-new"];
         let cats = ["cat-a", "cat-b", "cat-c", "cat-d", "cat-e", "cat-unseen"];
-        let prepared = model.prepare_ranker(&users, &cats, &candidates);
+        let prepared = model.prepare_scorer(&users, &cats, &candidates);
         for (u_idx, &user_id) in users.iter().enumerate() {
             for (c_idx, &org_cat) in cats.iter().enumerate() {
                 let ctx = RankingContext {

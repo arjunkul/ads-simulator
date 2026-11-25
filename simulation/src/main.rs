@@ -8,7 +8,7 @@ use std::{
 };
 
 use clap::Parser;
-use simulation::{Config, Strategy, run};
+use simulation::{Config, RankingStrategy, ScoringStrategy, ServingStrategy, run};
 use tempfile::NamedTempFile;
 
 #[derive(Parser)]
@@ -31,11 +31,14 @@ struct Args {
     /// Exact number of impressions to deliver across the 30 days.
     #[arg(long)]
     impressions: Option<u64>,
-    /// Ad selection / ranking strategy.
-    #[arg(long, value_enum, default_value_t = Strategy::Uniform)]
-    strategy: Strategy,
+    /// Ranking strategy (`Rank-*`) used to turn candidate scores into the served ad.
+    #[arg(long, value_enum, default_value_t = RankingStrategy::RankUniform)]
+    ranking_strategy: RankingStrategy,
+    /// Scoring strategy (`Score-*`) used to score eligible candidate ads.
+    #[arg(long, value_enum, default_value_t = ScoringStrategy::ScoreUniform)]
+    scoring_strategy: ScoringStrategy,
     /// Directory where daily impression-click JSONL logs (`day-01.jsonl`, ...) are written.
-    /// Defaults to a sibling `<output_stem>-impressions` directory when `--strategy r1` is used.
+    /// Defaults to a sibling `<output_stem>-impressions` directory when `--scoring-strategy Score-R1` is used.
     #[arg(long)]
     impression_log_dir: Option<PathBuf>,
 }
@@ -56,10 +59,11 @@ fn default_log_dir(output: &Path) -> PathBuf {
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let marketplace = serde_json::from_reader(BufReader::new(File::open(args.marketplace)?))?;
-    let impression_log_dir = match (args.strategy, args.impression_log_dir) {
+    let serving = ServingStrategy::new(args.ranking_strategy, args.scoring_strategy);
+    let impression_log_dir = match (serving.scoring, args.impression_log_dir) {
         (_, Some(dir)) => Some(dir),
-        (Strategy::R1, None) => Some(default_log_dir(&args.output)),
-        (Strategy::Uniform, None) => None,
+        (ScoringStrategy::ScoreR1, None) => Some(default_log_dir(&args.output)),
+        (ScoringStrategy::ScoreUniform, None) => None,
     };
     let report = run(
         &marketplace,
@@ -68,7 +72,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             campaign_budget_cents: args.campaign_budget_cents,
             cpc_cents: args.cpc_cents,
             impressions: args.impressions,
-            strategy: args.strategy,
+            serving,
             impression_log_dir,
         },
     )?;

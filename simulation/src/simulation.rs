@@ -1,11 +1,12 @@
 use std::{
     collections::{HashMap, HashSet},
+    fmt,
     io::{Error, ErrorKind},
     path::PathBuf,
 };
 
 use ads_ml::{
-    AdCandidate, ImpressionClickRef, ImpressionLogStore, LogisticRegressionModel, PreparedRanker,
+    AdCandidate, ImpressionClickRef, ImpressionLogStore, LogisticRegressionModel, PreparedScorer,
     TrainingConfig,
 };
 use ads_simulator::{Item, Marketplace, User, score_preference};
@@ -22,12 +23,75 @@ const CAMPAIGNS_PER_ADVERTISER: usize = 10;
 const MAX_CLICK_PROBABILITY: f64 = 0.04;
 const TIE_EPSILON: f64 = 1e-12;
 
+/// Ranking strategy (`Rank-*`): turns candidate scores into the selected ad.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, ValueEnum)]
-#[serde(rename_all = "snake_case")]
-pub enum Strategy {
+pub enum RankingStrategy {
     #[default]
-    Uniform,
-    R1,
+    #[serde(rename = "Rank-Uniform")]
+    #[value(name = "Rank-Uniform", alias = "rank-uniform", alias = "uniform")]
+    RankUniform,
+    #[serde(rename = "Rank-Greedy")]
+    #[value(name = "Rank-Greedy", alias = "rank-greedy", alias = "greedy")]
+    RankGreedy,
+}
+
+impl fmt::Display for RankingStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::RankUniform => f.write_str("Rank-Uniform"),
+            Self::RankGreedy => f.write_str("Rank-Greedy"),
+        }
+    }
+}
+
+/// Scoring strategy (`Score-*`): assigns a numeric score to each candidate ad.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, ValueEnum)]
+pub enum ScoringStrategy {
+    #[default]
+    #[serde(rename = "Score-Uniform")]
+    #[value(name = "Score-Uniform", alias = "score-uniform", alias = "uniform")]
+    ScoreUniform,
+    #[serde(rename = "Score-R1")]
+    #[value(name = "Score-R1", alias = "score-r1", alias = "r1")]
+    ScoreR1,
+}
+
+impl fmt::Display for ScoringStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ScoreUniform => f.write_str("Score-Uniform"),
+            Self::ScoreR1 => f.write_str("Score-R1"),
+        }
+    }
+}
+
+/// Serving strategy: a combination of a `Rank-*` ranking strategy and a `Score-*` scoring strategy.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct ServingStrategy {
+    pub ranking: RankingStrategy,
+    pub scoring: ScoringStrategy,
+}
+
+impl ServingStrategy {
+    pub const fn new(ranking: RankingStrategy, scoring: ScoringStrategy) -> Self {
+        Self { ranking, scoring }
+    }
+
+    #[cfg(test)]
+    pub const fn uniform() -> Self {
+        Self::new(RankingStrategy::RankUniform, ScoringStrategy::ScoreUniform)
+    }
+
+    #[cfg(test)]
+    pub const fn r1() -> Self {
+        Self::new(RankingStrategy::RankGreedy, ScoringStrategy::ScoreR1)
+    }
+}
+
+impl fmt::Display for ServingStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}+{}", self.ranking, self.scoring)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -36,7 +100,7 @@ pub struct Config {
     pub campaign_budget_cents: u64,
     pub cpc_cents: u64,
     pub impressions: Option<u64>,
-    pub strategy: Strategy,
+    pub serving: ServingStrategy,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub impression_log_dir: Option<PathBuf>,
 }
@@ -249,8 +313,8 @@ fn initialize_campaigns<'a>(
     Ok(campaigns)
 }
 
-fn select_ranked_campaign(
-    ranker: &PreparedRanker,
+fn select_greedy_campaign(
+    scorer: &PreparedScorer,
     user_index: usize,
     organic_category_index: usize,
     active: &[usize],
@@ -261,7 +325,7 @@ fn select_ranked_campaign(
     let mut tie_count = 0u64;
 
     for (pos, &campaign_index) in active.iter().enumerate() {
-        let score = ranker.score_logit(user_index, organic_category_index, campaign_index);
+        let score = scorer.score_logit(user_index, organic_category_index, campaign_index);
         if score > best_score + TIE_EPSILON {
             best_score = score;
             best_pos = pos;
@@ -304,11 +368,12 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
         .map(|(index, _)| index)
         .collect();
 
+    let needs_training_logs = config.serving.scoring == ScoringStrategy::ScoreR1;
     let (_temp_log_dir, log_store) = if let Some(ref dir) = config.impression_log_dir {
         let store = ImpressionLogStore::new(dir.clone());
         store.clear()?;
         (None, Some(store))
-    } else if config.strategy == Strategy::R1 {
+    } else if needs_training_logs {
         let temp_dir = tempfile::tempdir()?;
         let store = ImpressionLogStore::new(temp_dir.path());
         store.clear()?;
@@ -319,7 +384,7 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
 
     let mut days = Vec::with_capacity(DAYS);
     let mut training_runs = Vec::new();
-    let mut ranker: Option<PreparedRanker> = None;
+    let mut scorer: Option<PreparedScorer> = None;
     let mut totals = Activity::default();
     let mut opportunity_count = 0;
     let mut insufficient_budget = 0;
@@ -354,15 +419,17 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
                     continue;
                 }
                 let opportunity = &opportunities[slot];
-                let index = match (config.strategy, ranker.as_ref()) {
-                    (Strategy::R1, Some(prepared)) => select_ranked_campaign(
+                let index = match (config.serving.ranking, scorer.as_ref()) {
+                    (RankingStrategy::RankGreedy, Some(prepared)) => select_greedy_campaign(
                         prepared,
                         opportunity.user_index,
                         opportunity.organic_category_index,
                         &active,
                         &mut ads_rng,
                     ),
-                    _ => ads_rng.random_range(0..active.len()),
+                    (RankingStrategy::RankUniform, _) | (RankingStrategy::RankGreedy, None) => {
+                        ads_rng.random_range(0..active.len())
+                    }
                 };
                 let campaign = &mut campaigns[active[index]];
                 let score = score_preference(opportunity.user, campaign.item);
@@ -415,7 +482,7 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
             writer.finish()?;
         }
 
-        if config.strategy == Strategy::R1
+        if config.serving.scoring == ScoringStrategy::ScoreR1
             && day < DAYS
             && let Some(store) = log_store.as_ref()
         {
@@ -445,7 +512,7 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
                     ad_price_cents: campaign.item.price_cents,
                 })
                 .collect();
-            ranker = Some(model.prepare_ranker(&user_ids, &category_ids, &candidates));
+            scorer = Some(model.prepare_scorer(&user_ids, &category_ids, &candidates));
         }
 
         opportunity_count += daily.opportunities;
@@ -478,7 +545,10 @@ mod tests {
     use ads_ml::ImpressionLogStore;
     use ads_simulator::generate_marketplace;
 
-    use super::{Activity, CAMPAIGNS_PER_ADVERTISER, Config, DAYS, Strategy, run};
+    use super::{
+        Activity, CAMPAIGNS_PER_ADVERTISER, Config, DAYS, RankingStrategy, ScoringStrategy,
+        ServingStrategy, run,
+    };
 
     fn uniform_config(
         seed: u64,
@@ -491,7 +561,7 @@ mod tests {
             campaign_budget_cents,
             cpc_cents,
             impressions,
-            strategy: Strategy::Uniform,
+            serving: ServingStrategy::uniform(),
             impression_log_dir: None,
         }
     }
@@ -705,7 +775,7 @@ mod tests {
             campaign_budget_cents: 10_000,
             cpc_cents: 100,
             impressions,
-            strategy: Strategy::R1,
+            serving: ServingStrategy::r1(),
             impression_log_dir: Some(temp.path().to_path_buf()),
         };
         let r1_report = run(&marketplace, r1_config.clone()).unwrap();
@@ -769,5 +839,48 @@ mod tests {
         let first = run(&marketplace, repeat_config.clone()).unwrap();
         let second = run(&marketplace, repeat_config).unwrap();
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn serving_strategy_composes_rank_and_score_independently() {
+        let marketplace = generate_marketplace(42);
+        let impressions = Some(3_000);
+        let baseline = run(&marketplace, uniform_config(42, 10_000, 100, impressions)).unwrap();
+
+        // Rank-Uniform + Score-R1 trains daily from disk logs while keeping uniform delivery.
+        let shadow_serving =
+            ServingStrategy::new(RankingStrategy::RankUniform, ScoringStrategy::ScoreR1);
+        assert_eq!(shadow_serving.to_string(), "Rank-Uniform+Score-R1");
+        let shadow = run(
+            &marketplace,
+            Config {
+                serving: shadow_serving,
+                ..uniform_config(42, 10_000, 100, impressions)
+            },
+        )
+        .unwrap();
+        assert_eq!(shadow.summary, baseline.summary);
+        assert_eq!(shadow.days, baseline.days);
+        assert_eq!(shadow.training_runs.len(), DAYS - 1);
+        let shadow_json = serde_json::to_value(shadow.config.serving).unwrap();
+        assert_eq!(
+            shadow_json,
+            serde_json::json!({"ranking": "Rank-Uniform", "scoring": "Score-R1"})
+        );
+
+        // Rank-Greedy + Score-Uniform skips training and ties uniformly across constant scores.
+        let greedy_uniform = run(
+            &marketplace,
+            Config {
+                serving: ServingStrategy::new(
+                    RankingStrategy::RankGreedy,
+                    ScoringStrategy::ScoreUniform,
+                ),
+                ..uniform_config(42, 10_000, 100, impressions)
+            },
+        )
+        .unwrap();
+        assert_eq!(greedy_uniform.summary, baseline.summary);
+        assert!(greedy_uniform.training_runs.is_empty());
     }
 }
