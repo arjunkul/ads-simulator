@@ -1,6 +1,7 @@
 mod bidding;
 mod pacing;
 mod ranking;
+mod retrieval;
 mod simulation;
 mod timestamp;
 
@@ -14,7 +15,10 @@ use std::{
 use bidding::BiddingStrategy;
 use clap::Parser;
 use pacing::PacingStrategy;
-use simulation::{Config, run, run_with_impressions};
+use retrieval::RetrievalStrategy;
+use simulation::{
+    Config, RankingStrategy, ScoringStrategy, ServingStrategy, run, run_with_impressions,
+};
 use tempfile::NamedTempFile;
 
 #[derive(Parser)]
@@ -43,12 +47,25 @@ struct Args {
     /// Exact number of timestamped ad opportunities to generate across the 30 days.
     #[arg(long, conflicts_with = "impressions")]
     opportunities: Option<u64>,
+    /// Retrieval strategy (`Retrieve-*`) used to pull eligible candidate campaigns.
+    #[arg(long, value_enum, default_value_t = RetrievalStrategy::RetrieveV0)]
+    retrieval_strategy: RetrievalStrategy,
+    /// Ranking strategy (`Rank-*`) used to turn candidate scores into the served ad.
+    #[arg(long, value_enum, default_value_t = RankingStrategy::RankUniform)]
+    ranking_strategy: RankingStrategy,
+    /// Scoring strategy (`Score-*`) used to score eligible candidate ads.
+    #[arg(long, value_enum, default_value_t = ScoringStrategy::ScoreUniform)]
+    scoring_strategy: ScoringStrategy,
     /// Budget pacing strategy.
     #[arg(long, value_enum, default_value_t = PacingStrategy::Pacing1)]
     pacing: PacingStrategy,
     /// Bidding strategy.
     #[arg(long, value_enum, default_value_t = BiddingStrategy::Basebid)]
     bidding: BiddingStrategy,
+    /// Directory where daily impression-click JSONL logs (`day-01.jsonl`, ...) are written.
+    /// Defaults to a sibling `<output_stem>-impressions` directory when `--scoring-strategy Score-R1` is used.
+    #[arg(long)]
+    impression_log_dir: Option<PathBuf>,
 }
 
 fn parent_dir(path: &Path) -> &Path {
@@ -57,17 +74,39 @@ fn parent_dir(path: &Path) -> &Path {
         .unwrap_or_else(|| Path::new("."))
 }
 
+fn default_log_dir(output: &Path) -> PathBuf {
+    let parent = parent_dir(output);
+    let stem = output
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or("simulation");
+    parent.join(format!("{stem}-impressions"))
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let marketplace = serde_json::from_reader(BufReader::new(File::open(args.marketplace)?))?;
+    let serving = ServingStrategy::new(
+        args.retrieval_strategy,
+        args.ranking_strategy,
+        args.scoring_strategy,
+    );
+    let impression_log_dir = match (serving.scoring, args.impression_log_dir) {
+        (_, Some(dir)) => Some(dir),
+        (ScoringStrategy::ScoreR1, None) => Some(default_log_dir(&args.output)),
+        (ScoringStrategy::ScoreUniform, None) => None,
+    };
     let config = Config {
         seed: args.seed,
         campaign_budget_cents: args.campaign_budget_cents,
         cpc_cents: args.cpc_cents,
         impressions: args.impressions,
         opportunities: args.opportunities,
+        serving,
         pacing: args.pacing,
         bidding: args.bidding,
+        impression_log_dir,
     };
 
     let report = if let Some(impressions_path) = args.impressions_output {

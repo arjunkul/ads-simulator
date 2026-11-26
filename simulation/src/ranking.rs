@@ -1,4 +1,6 @@
-use ads_simulator::{Item, User, score_preference};
+#[cfg(test)]
+use ads_simulator::score_preference;
+use ads_simulator::{Item, User};
 
 pub const MAX_CLICK_PROBABILITY: f64 = 0.04;
 
@@ -7,10 +9,12 @@ pub trait RankingModel {
     fn predict_pctr(&self, user: &User, item: &Item) -> f64;
 }
 
-/// Default ranking model using the marketplace preference score.
+/// Oracle ranking model using the marketplace preference score (for testing).
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DefaultRankingModel;
 
+#[cfg(test)]
 impl RankingModel for DefaultRankingModel {
     fn predict_pctr(&self, user: &User, item: &Item) -> f64 {
         MAX_CLICK_PROBABILITY * score_preference(user, item)
