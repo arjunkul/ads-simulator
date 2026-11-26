@@ -2,7 +2,7 @@
 
 Runs a seeded 30-day click-only CPC simulation with an explicit 5-axis ad-serving strategy stack:
 
-1. **Retrieval (`--retrieval` / `--retrieval-strategy`)**: `Retrieve-V0` (O(1) sparse-set index of funded campaigns).
+1. **Retrieval (`--retrieval` / `--retrieval-strategy`)**: `Retrieve-V0` (O(20) sparse-set index uniformly sampling up to 20 funded campaigns per request).
 2. **Pacing (`--pacing`)**: `P0` (`none`), `P1` (even daily cap), `P2` (smooth probabilistic), `pacing-1` (24-hour PST diurnal linear schedule).
 3. **Bidding (`--bidding`)**: `bidding-basebid` (`B0`), `bidding-autobid-v0` (`B1`, 1st-price auction `basebid * pCTR * pacing_factor`).
 4. **Scoring (`--scoring` / `--scoring-strategy`)**: `S0` (`Score-Uniform`), `S1` (Online UCB1 CTR), `S2` (Empirical CTR), `S3` (Empirical eCPM), `Score-R1` (daily cold-trained PyTorch L2 logistic regression via `ads-ml`).

@@ -29,8 +29,8 @@ pub use ranker::{
     ServingContext,
 };
 pub use retrieval::{
-    ActiveBudgetRetriever, CampaignRetriever, DEFAULT_RETRIEVAL, RetrievalRequest,
-    RetrievalStrategy, build_retriever,
+    ActiveBudgetRetriever, CampaignRetriever, DEFAULT_RETRIEVAL, RETRIEVE_V0_MAX_CANDIDATES,
+    RetrievalRequest, RetrievalStrategy, build_retriever,
 };
 pub use strategy::{
     DEFAULT_PACING, DEFAULT_SCORING, PacingStrategy, ScoringStrategy, StrategyInfo,
@@ -523,7 +523,7 @@ impl AdServer {
     /// Serve a set of ads from distinct retrieved, paced, scored, bid, and ranked campaigns for `user_id`.
     ///
     /// Guarantees:
-    /// - Stage 1 (Retrieval): O(1) lookup via [`CampaignRetriever`] (`Retrieve-V0`).
+    /// - Stage 1 (Retrieval): O(20) lookup via [`CampaignRetriever`] (`Retrieve-V0`, up to 20 funded campaigns).
     /// - Stage 2 (Pacing): Applies [`PacingStrategy`] (`P0`/`P1`/`P2`/`pacing-1`) for `(day, second_of_day)`.
     /// - Stage 3–5 (Scoring, Bidding, Ranking): Scores & bids candidates and selects up to `slate_size()`
     ///   distinct funded campaigns.
@@ -542,7 +542,7 @@ impl AdServer {
             organic_category_index: 0,
         };
 
-        let retrieved = self.retriever.retrieve(&req);
+        let retrieved = self.retriever.retrieve(&req, &mut self.rng);
         if retrieved.is_empty() {
             return AdResponse {
                 user_id: user_id.to_owned(),
@@ -920,27 +920,40 @@ mod tests {
         )
         .unwrap();
 
-        let budgets_a: Vec<u64> = server_a.campaigns().iter().map(|c| c.budget_cents).collect();
-        let budgets_b: Vec<u64> = server_b.campaigns().iter().map(|c| c.budget_cents).collect();
-        let budgets_c: Vec<u64> = server_c.campaigns().iter().map(|c| c.budget_cents).collect();
+        let budgets_a: Vec<u64> = server_a
+            .campaigns()
+            .iter()
+            .map(|c| c.budget_cents)
+            .collect();
+        let budgets_b: Vec<u64> = server_b
+            .campaigns()
+            .iter()
+            .map(|c| c.budget_cents)
+            .collect();
+        let budgets_c: Vec<u64> = server_c
+            .campaigns()
+            .iter()
+            .map(|c| c.budget_cents)
+            .collect();
 
         assert_eq!(budgets_a, budgets_b);
         assert_ne!(budgets_a, budgets_c);
         assert_eq!(budgets_a.len(), 500);
         for &b in &budgets_a {
             assert!(
-                (crate::DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS..=crate::DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS)
+                (crate::DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS
+                    ..=crate::DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS)
                     .contains(&b),
                 "campaign budget {b} out of default [$1,000, $10,000] range"
             );
             assert_eq!(b % 100, 0, "default budget should be whole dollars");
         }
         let distinct: HashSet<u64> = budgets_a.iter().copied().collect();
-        assert!(distinct.len() > 100, "expected diverse randomized campaign budgets");
-        assert_eq!(
-            server_a.total_budget_cents(),
-            budgets_a.iter().sum::<u64>()
+        assert!(
+            distinct.len() > 100,
+            "expected diverse randomized campaign budgets"
         );
+        assert_eq!(server_a.total_budget_cents(), budgets_a.iter().sum::<u64>());
 
         let bad = AdServer::from_marketplace(
             &mp,
@@ -977,7 +990,9 @@ mod tests {
         assert_eq!(resp1.ads.len(), 10);
         assert_eq!(resp1.pacing, crate::PacingStrategy::P1);
         for ad in &resp1.ads {
-            server.record_impression(1, ad.campaign_index, true).unwrap();
+            server
+                .record_impression(1, ad.campaign_index, true)
+                .unwrap();
         }
         // All 10 campaigns hit Day 1 cap ($1.00 = 100 cents), so Day 1 serves 0 more ads.
         let resp1_after = server.serve_ads_for_day(1, "user-0001").unwrap();
@@ -1011,7 +1026,13 @@ mod tests {
         for idx in 0..10 {
             server.record_impression(1, idx, true).unwrap();
         }
-        assert!(server.serve_ads_for_day(1, "user-0001").unwrap().ads.is_empty());
+        assert!(
+            server
+                .serve_ads_for_day(1, "user-0001")
+                .unwrap()
+                .ads
+                .is_empty()
+        );
         // Day 30 unlocks all remaining budget regardless of daily spend.
         let day30 = server.serve_ads_for_day(30, "user-0001").unwrap();
         assert_eq!(day30.ads.len(), 10);
@@ -1059,7 +1080,9 @@ mod tests {
         assert_eq!(r0.retrieval, crate::RetrievalStrategy::RetrieveV0);
         assert_eq!(r0.pacing, crate::PacingStrategy::Pacing1);
         for ad in &r0.ads {
-            server.record_impression(1, ad.campaign_index, true).unwrap();
+            server
+                .record_impression(1, ad.campaign_index, true)
+                .unwrap();
         }
         // At 07:59:59 PST (28_799s), all 10 campaigns are still throttled.
         server.set_second_of_day(28_799).unwrap();

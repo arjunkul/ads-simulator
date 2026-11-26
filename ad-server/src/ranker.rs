@@ -40,13 +40,25 @@ pub struct ServingContext<'a> {
 pub enum RankerStrategy {
     /// Strategy R1 (`Rank-Uniform`): select up to 20 distinct random campaigns that currently have budget.
     #[default]
-    #[serde(rename = "R1", alias = "r1", alias = "Rank-Uniform", alias = "rank-uniform", alias = "random")]
+    #[serde(
+        rename = "R1",
+        alias = "r1",
+        alias = "Rank-Uniform",
+        alias = "rank-uniform",
+        alias = "random"
+    )]
     R1,
     /// Strategy R2: cold-start priority + Top-K by score with 10% ε-greedy exploration.
     #[serde(rename = "R2", alias = "r2", alias = "eps_greedy")]
     R2,
     /// Strategy R3 (`Rank-Greedy`): cold-start priority + pure Greedy Top-K by score (0% ε-greedy).
-    #[serde(rename = "R3", alias = "r3", alias = "Rank-Greedy", alias = "rank-greedy", alias = "greedy")]
+    #[serde(
+        rename = "R3",
+        alias = "r3",
+        alias = "Rank-Greedy",
+        alias = "rank-greedy",
+        alias = "greedy"
+    )]
     R3,
 }
 
@@ -135,12 +147,12 @@ impl RankerStrategy {
     ) -> Box<dyn AdsRanker> {
         match self {
             RankerStrategy::R1 => Box::new(R1RandomBudgetedRanker::new(slate_size)),
-            RankerStrategy::R2 => {
-                Box::new(R2OnlineCtrRanker::with_scoring(slate_size, scoring, cpc_cents))
-            }
-            RankerStrategy::R3 => {
-                Box::new(R3GreedyTopKRanker::with_scoring(slate_size, scoring, cpc_cents))
-            }
+            RankerStrategy::R2 => Box::new(R2OnlineCtrRanker::with_scoring(
+                slate_size, scoring, cpc_cents,
+            )),
+            RankerStrategy::R3 => Box::new(R3GreedyTopKRanker::with_scoring(
+                slate_size, scoring, cpc_cents,
+            )),
         }
     }
 }
@@ -273,11 +285,7 @@ impl R2OnlineCtrRanker {
     }
 
     /// Create an R2 ranker using an explicit [`ScoringStrategy`] and `cpc_cents`.
-    pub const fn with_scoring(
-        slate_size: usize,
-        scoring: ScoringStrategy,
-        cpc_cents: u64,
-    ) -> Self {
+    pub const fn with_scoring(slate_size: usize, scoring: ScoringStrategy, cpc_cents: u64) -> Self {
         Self {
             slate_size,
             epsilon: R2_EPSILON,
@@ -322,11 +330,7 @@ impl R3GreedyTopKRanker {
     }
 
     /// Create an R3 greedy top-K ranker using an explicit [`ScoringStrategy`] and `cpc_cents`.
-    pub const fn with_scoring(
-        slate_size: usize,
-        scoring: ScoringStrategy,
-        cpc_cents: u64,
-    ) -> Self {
+    pub const fn with_scoring(slate_size: usize, scoring: ScoringStrategy, cpc_cents: u64) -> Self {
         Self {
             slate_size,
             exploration_c: R2_UCB_EXPLORATION_C,
@@ -588,7 +592,10 @@ mod tests {
         assert_eq!(RankerStrategy::from_str("R2").unwrap(), RankerStrategy::R2);
         assert_eq!(RankerStrategy::from_str("r2").unwrap(), RankerStrategy::R2);
         assert_eq!(RankerStrategy::from_str("R3").unwrap(), RankerStrategy::R3);
-        assert_eq!(RankerStrategy::from_str("greedy").unwrap(), RankerStrategy::R3);
+        assert_eq!(
+            RankerStrategy::from_str("greedy").unwrap(),
+            RankerStrategy::R3
+        );
         assert!(RankerStrategy::from_str("R99").is_err());
         assert_eq!(RankerStrategy::R1.to_string(), "R1");
         assert_eq!(RankerStrategy::R2.to_string(), "R2");
@@ -634,7 +641,8 @@ mod tests {
 
     #[test]
     fn r2_explores_cold_start_then_exploits_higher_ctr_campaigns() {
-        let mp = generate_marketplace(42);
+        let mut mp = generate_marketplace(42);
+        mp.advertisers.truncate(2); // 20 campaigns (fits within Retrieve-V0's 20-campaign cap)
         let mut server = AdServer::from_marketplace(
             &mp,
             AdServerConfig {
@@ -642,14 +650,14 @@ mod tests {
                 ranker: RankerStrategy::R2,
                 scoring: ScoringStrategy::S1,
                 pacing: PacingStrategy::P0,
-                slate_size: 20,
+                slate_size: 10,
                 ..AdServerConfig::default()
             },
         )
         .unwrap();
 
         // Give every campaign 100 baseline impressions; boost campaigns 10..20 to 5% CTR.
-        for idx in 0..500 {
+        for idx in 0..20 {
             for step in 0..100 {
                 let clicked = (10..20).contains(&idx) && step < 5;
                 server.record_impression(1, idx, clicked).unwrap();
@@ -660,9 +668,9 @@ mod tests {
         assert_eq!(resp.strategy, RankerStrategy::R2);
         assert_eq!(resp.scoring, ScoringStrategy::S1);
         assert_eq!(resp.pacing, PacingStrategy::P0);
-        assert_eq!(resp.ads.len(), 20);
+        assert_eq!(resp.ads.len(), 10);
         let unique: HashSet<_> = resp.ads.iter().map(|a| a.campaign_index).collect();
-        assert_eq!(unique.len(), 20);
+        assert_eq!(unique.len(), 10);
 
         // Most of the 10 boosted campaigns should be selected in the exploited top slots.
         let boosted_hits = (10..20).filter(|idx| unique.contains(idx)).count();
@@ -674,7 +682,8 @@ mod tests {
 
     #[test]
     fn r3_greedy_with_emp_ctr_picks_all_ten_boosted_campaigns_deterministically() {
-        let mp = generate_marketplace(42);
+        let mut mp = generate_marketplace(42);
+        mp.advertisers.truncate(2); // 20 campaigns (fits within Retrieve-V0's 20-campaign cap)
         let mut server = AdServer::from_marketplace(
             &mp,
             AdServerConfig {
@@ -688,7 +697,7 @@ mod tests {
         )
         .unwrap();
 
-        for idx in 0..500 {
+        for idx in 0..20 {
             for step in 0..100 {
                 let clicked = (10..20).contains(&idx) && step < 5;
                 server.record_impression(1, idx, clicked).unwrap();

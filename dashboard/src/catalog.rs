@@ -127,7 +127,12 @@ pub struct BrowsingSplit {
     pub exploration: usize,
 }
 
-fn param(key: &str, label: &str, value: impl Into<serde_json::Value>, unit: &str) -> PieceParameter {
+fn param(
+    key: &str,
+    label: &str,
+    value: impl Into<serde_json::Value>,
+    unit: &str,
+) -> PieceParameter {
     PieceParameter {
         key: key.to_owned(),
         label: label.to_owned(),
@@ -369,13 +374,13 @@ pub fn build_catalog() -> SimulatorCatalog {
             ],
             features: vec![
                 feat("Explicit 5-Axis Strategy Manifest", "Every run resolves and records concrete Retrieval, Ranking, Scoring, Pacing, and Bidding strategies across reports, analysis, SVGs, and dashboards."),
-                feat("O(1) Active-Budget Retrieval (Retrieve-V0)", "ActiveBudgetRetriever sparse-set index returns all funded campaigns in O(active) with O(1) swap-remove retirement."),
+                feat("Active-Budget Retrieval (Retrieve-V0, Top-20)", "ActiveBudgetRetriever sparse-set index uniformly samples up to 20 funded campaigns per request in O(20) with O(1) swap-remove retirement."),
                 feat("Pluggable Candidate Scoring (S0–S3 + Score-R1)", "Supports Uniform (S0), Online UCB1 CTR (S1), Empirical CTR (S2), Empirical eCPM (S3), and daily PyTorch L2 logistic regression CTR (Score-R1 via ads-ml)."),
                 feat("Budget Pacing Engines (P0–P2 + pacing-1)", "Supports Unpaced ASAP (P0), Even Daily Cap (P1), Smooth Probabilistic (P2), and 24-hour PST linear intraday budget schedule (pacing-1)."),
                 feat("Auction Bidding & Slate Ranking (B0–B1 × R1–R3)", "Supports Base Bid (bidding-basebid) and eCPM Auto-Bid (bidding-autobid-v0) combined with Random (R1), Bandit ε-greedy (R2), and Greedy Top-K (R3)."),
             ],
             gaps_and_simplifications: vec![
-                "Retrieve-V0 scans all active funded campaigns without ANN/inverted-index pre-filtering; Score-R1 requires Python PyTorch runtime for daily cold retraining.".into(),
+                "Retrieve-V0 uniformly samples up to 20 funded campaigns without ANN/inverted-index pre-filtering; Score-R1 requires Python PyTorch runtime for daily cold retraining.".into(),
             ],
         },
         SimulatorPiece {
@@ -504,21 +509,69 @@ pub fn build_catalog() -> SimulatorCatalog {
         .sum();
 
     let pipeline_edges = vec![
-        edge("taxonomy-schema", "advertiser-catalog", "10x10 category IDs"),
-        edge("taxonomy-schema", "organic-inventory", "50 listings / category"),
-        edge("taxonomy-schema", "visit-simulator", "100 category IDs -> 5 preferred / user"),
-        edge("organic-inventory", "user-browsing", "9 affinity + 3 exploration views"),
-        edge("user-browsing", "visit-simulator", "user_ids (1,000 shoppers)"),
-        edge("advertiser-catalog", "ad-server", "500 funded CPC campaigns"),
-        edge("visit-simulator", "ad-server", "serve_ads(user_id) & record_impression"),
+        edge(
+            "taxonomy-schema",
+            "advertiser-catalog",
+            "10x10 category IDs",
+        ),
+        edge(
+            "taxonomy-schema",
+            "organic-inventory",
+            "50 listings / category",
+        ),
+        edge(
+            "taxonomy-schema",
+            "visit-simulator",
+            "100 category IDs -> 5 preferred / user",
+        ),
+        edge(
+            "organic-inventory",
+            "user-browsing",
+            "9 affinity + 3 exploration views",
+        ),
+        edge(
+            "user-browsing",
+            "visit-simulator",
+            "user_ids (1,000 shoppers)",
+        ),
+        edge(
+            "advertiser-catalog",
+            "ad-server",
+            "500 funded CPC campaigns",
+        ),
+        edge(
+            "visit-simulator",
+            "ad-server",
+            "serve_ads(user_id) & record_impression",
+        ),
         edge("ad-server", "ads-ranker-r1", "eligible funded pool"),
         edge("ads-ranker-r1", "ad-server", "20 distinct funded campaigns"),
         edge("ad-server", "visit-simulator", "20-ad served slate"),
-        edge("visit-simulator", "delivery-click-engine", "delivered impressions & clicks"),
-        edge("delivery-click-engine", "simulation-analyzer", "30-day Report JSON"),
-        edge("delivery-click-engine", "sim-agent-runner", "audited 30-day ledger"),
-        edge("simulation-analyzer", "sim-agent-runner", "analysis.json + findings"),
-        edge("sim-agent-runner", "dashboard-inspector", "time series, analysis & SVG"),
+        edge(
+            "visit-simulator",
+            "delivery-click-engine",
+            "delivered impressions & clicks",
+        ),
+        edge(
+            "delivery-click-engine",
+            "simulation-analyzer",
+            "30-day Report JSON",
+        ),
+        edge(
+            "delivery-click-engine",
+            "sim-agent-runner",
+            "audited 30-day ledger",
+        ),
+        edge(
+            "simulation-analyzer",
+            "sim-agent-runner",
+            "analysis.json + findings",
+        ),
+        edge(
+            "sim-agent-runner",
+            "dashboard-inspector",
+            "time series, analysis & SVG",
+        ),
     ];
 
     SimulatorCatalog {
