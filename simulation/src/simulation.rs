@@ -25,7 +25,8 @@ use ad_server::{
     ScoringStrategy, StrategyProfile,
 };
 use ads_ml::{
-    AdCandidate, ImpressionClickRef, ImpressionLogStore, PyTorchTrainer, TrainingConfig,
+    AdCandidate, ImpressionClickRef, ImpressionLogStore, PyTorchTrainer, SufficientStatsPayload,
+    TrainingConfig,
 };
 use ads_simulator::{Item, Marketplace, User, score_preference};
 use impression_generator::{
@@ -463,6 +464,7 @@ pub fn run_with_log_dir<'a>(
     let strategy = ad_server.strategy_profile();
 
     let use_ml_scoring = config.scoring == ScoringStrategy::ScoreR1;
+    let write_daily_jsonl = impression_log_dir.is_some();
     let _temp_log_dir: Option<TempDir>;
     let log_store: Option<ImpressionLogStore> = if let Some(dir) = impression_log_dir {
         _temp_log_dir = None;
@@ -485,6 +487,54 @@ pub fn run_with_log_dir<'a>(
         None
     };
 
+    // Pre-index users and campaigns for O(1) exact sufficient-statistics aggregation when
+    // Score-R1 is active, avoiding O(D^2) Python JSONL re-parsing on 100M-impression runs.
+    let num_users = user_ids.len();
+    let num_campaigns = ad_server.campaigns().len();
+    let mut user_idx_map: HashMap<&str, usize> = HashMap::new();
+    let mut camp_idx_map: HashMap<String, usize> = HashMap::new();
+    let mut ml_cat_vocab: Vec<String> = Vec::new();
+    let mut ml_adv_vocab: Vec<String> = Vec::new();
+    let mut ml_camp_vocab: Vec<String> = Vec::new();
+    let mut ml_camp_meta: Vec<(usize, usize, usize)> = Vec::new();
+    let mut ml_counts: Vec<(u64, u64)> = Vec::new();
+
+    if use_ml_scoring {
+        user_idx_map.reserve(num_users);
+        for (u_idx, uid) in user_ids.iter().enumerate() {
+            user_idx_map.insert(uid.as_str(), u_idx);
+        }
+        let mut cat_map: HashMap<String, usize> = HashMap::new();
+        let mut adv_map: HashMap<String, usize> = HashMap::new();
+        camp_idx_map.reserve(num_campaigns);
+        ml_camp_vocab.reserve(num_campaigns);
+        ml_camp_meta.reserve(num_campaigns);
+        for (k_idx, camp) in ad_server.campaigns().iter().enumerate() {
+            camp_idx_map.insert(camp.id.clone(), k_idx);
+            ml_camp_vocab.push(camp.id.clone());
+            let c_idx = match cat_map.get(&camp.category_id) {
+                Some(&idx) => idx,
+                None => {
+                    let idx = ml_cat_vocab.len();
+                    ml_cat_vocab.push(camp.category_id.clone());
+                    cat_map.insert(camp.category_id.clone(), idx);
+                    idx
+                }
+            };
+            let a_idx = match adv_map.get(&camp.advertiser_id) {
+                Some(&idx) => idx,
+                None => {
+                    let idx = ml_adv_vocab.len();
+                    ml_adv_vocab.push(camp.advertiser_id.clone());
+                    adv_map.insert(camp.advertiser_id.clone(), idx);
+                    idx
+                }
+            };
+            ml_camp_meta.push((c_idx, a_idx, k_idx));
+        }
+        ml_counts = vec![(0u64, 0u64); num_users * num_campaigns];
+    }
+
     let mut impression_generator = ImpressionGenerator::new(
         user_ids.clone(),
         ImpressionGeneratorConfig {
@@ -505,9 +555,13 @@ pub fn run_with_log_dir<'a>(
     let mut insufficient_budget = 0u64;
 
     for day in 1..=DAYS {
-        let mut day_writer = match &log_store {
-            Some(store) => Some(store.create_day_writer(day)?),
-            None => None,
+        let mut day_writer = if write_daily_jsonl {
+            match &log_store {
+                Some(store) => Some(store.create_day_writer(day)?),
+                None => None,
+            }
+        } else {
+            None
         };
         let mut write_err: Option<Error> = None;
 
@@ -523,6 +577,18 @@ pub fn run_with_log_dir<'a>(
                 .expect("ad server only emits known catalog items");
             let score = score_preference(user, item);
             let clicked = click_rng.random_bool(MAX_CLICK_PROBABILITY * score);
+            if use_ml_scoring {
+                if let (Some(&u_idx), Some(&k_idx)) = (
+                    user_idx_map.get(impression.user_id.as_str()),
+                    camp_idx_map.get(impression.ad.campaign_id.as_str()),
+                ) {
+                    let slot = &mut ml_counts[u_idx * num_campaigns + k_idx];
+                    slot.0 += 1;
+                    if clicked {
+                        slot.1 += 1;
+                    }
+                }
+            }
             if let Some(writer) = day_writer.as_mut() {
                 if write_err.is_none() {
                     let rec = ImpressionClickRef {
@@ -556,10 +622,36 @@ pub fn run_with_log_dir<'a>(
         if use_ml_scoring && day < DAYS {
             if let (Some(store), Some(pt)) = (log_store.as_ref(), trainer.as_mut()) {
                 let model_out = store.model_file_path(day);
-                let model =
-                    pt.train_from_log_store(store, day, &model_out, TrainingConfig::default())?;
+                let stats_file = store.root().join(format!("stats-day-{day:02}.json"));
                 let user_refs: Vec<&str> = user_ids.iter().map(String::as_str).collect();
-                let cat_refs: [&str; 1] = [""];
+                let cat_vocab_refs: Vec<&str> = ml_cat_vocab.iter().map(String::as_str).collect();
+                let adv_vocab_refs: Vec<&str> = ml_adv_vocab.iter().map(String::as_str).collect();
+                let camp_vocab_refs: Vec<&str> = ml_camp_vocab.iter().map(String::as_str).collect();
+                let mut groups: Vec<(usize, usize, usize, usize, u8, u64, u64)> = Vec::new();
+                for (flat_idx, &(imp, clk)) in ml_counts.iter().enumerate() {
+                    if imp > 0 {
+                        let u_idx = flat_idx / num_campaigns;
+                        let k_idx = flat_idx % num_campaigns;
+                        let (c_idx, a_idx, _) = ml_camp_meta[k_idx];
+                        groups.push((u_idx, c_idx, a_idx, k_idx, 0, imp, clk));
+                    }
+                }
+                let payload = SufficientStatsPayload {
+                    user_vocab: &user_refs,
+                    ad_category_vocab: &cat_vocab_refs,
+                    advertiser_vocab: &adv_vocab_refs,
+                    campaign_vocab: &camp_vocab_refs,
+                    groups: &groups,
+                };
+                let model = pt.train_from_sufficient_stats(
+                    &payload,
+                    &stats_file,
+                    &model_out,
+                    TrainingConfig::default(),
+                )?;
+                let mut cat_refs: Vec<&str> = Vec::with_capacity(ml_cat_vocab.len() + 1);
+                cat_refs.push("");
+                cat_refs.extend(ml_cat_vocab.iter().map(String::as_str));
                 let candidates: Vec<AdCandidate<'_>> = ad_server
                     .campaigns()
                     .iter()

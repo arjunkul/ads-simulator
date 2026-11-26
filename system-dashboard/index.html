@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Ads-Simulator — System Strategy Dashboard (100M Impressions)</title>
+  <title>Ads-Simulator — System Strategy Dashboard (100M Impressions · 3 Profiles)</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -21,7 +21,8 @@
       --purple: #a78bfa;
       --purple-bg: rgba(167, 139, 250, 0.14);
       --r1: #94a3b8;
-      --r2: #34d399;
+      --r2: #fbbf24;
+      --r3: #34d399;
     }
     @media (prefers-color-scheme: light) {
       :root {
@@ -40,7 +41,8 @@
         --purple: #7c3aed;
         --purple-bg: rgba(124, 58, 237, 0.10);
         --r1: #64748b;
-        --r2: #059669;
+        --r2: #d97706;
+        --r3: #059669;
       }
     }
     * { box-sizing: border-box; }
@@ -52,7 +54,7 @@
       color: var(--text);
       line-height: 1.5;
     }
-    .container { max-width: 1220px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+    .container { max-width: 1260px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
     header {
       display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px;
       padding-bottom: 16px; border-bottom: 1px solid var(--border);
@@ -80,8 +82,8 @@
     .kpi-value { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 4px; }
     .kpi-sub { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
     .table-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-    th, td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+    th, td { text-align: left; padding: 11px 11px; border-bottom: 1px solid var(--border); vertical-align: top; }
     th {
       font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
       background: var(--surface-alt); white-space: nowrap;
@@ -101,7 +103,7 @@
       display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
       margin-bottom: 12px;
     }
-    .legend { display: flex; align-items: center; gap: 14px; font-size: 0.8rem; color: var(--muted); }
+    .legend { display: flex; align-items: center; gap: 14px; font-size: 0.8rem; color: var(--muted); flex-wrap: wrap; }
     .legend-item { display: inline-flex; align-items: center; gap: 6px; }
     .swatch { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
     .chart-readout {
@@ -125,7 +127,7 @@
     <header>
       <div>
         <h1>Ads-Simulator · System Strategy Dashboard</h1>
-        <p class="subtitle">Explicit 5-axis <code>ad-server</code> + <code>ads-ml</code> strategy contract (<strong>Retrieval × Pacing × Bidding × Scoring × Ranking</strong>) — 30-day 100M-impression benchmark (500 campaigns · 50 advertisers · 1,000 shoppers · $1 CPC · Seed 42)</p>
+        <p class="subtitle">Explicit 5-axis <code>ad-server</code> + <code>ads-ml</code> strategy contract (<strong>Retrieval × Pacing × Bidding × Scoring × Ranking</strong>) — 30-day 100M-impression 3-profile benchmark (500 campaigns · 50 advertisers · 1,000 shoppers · $1 CPC · Seed 42)</p>
       </div>
       <span class="run-pill mono">100,000,000 Impr · $10k–$100k/camp · $27.99M Pool</span>
     </header>
@@ -134,7 +136,7 @@
 
     <section class="card" style="padding: 0; overflow: hidden;">
       <div style="padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-        <strong>100M-Impression Benchmark Runs (Explicit Retrieval · Ranking · Scoring · Pacing · Bidding)</strong>
+        <strong>100M-Impression Benchmark Runs (3 Profiles · Explicit Retrieval · Ranking · Scoring · Pacing · Bidding)</strong>
         <span style="font-size: 0.8rem; color: var(--muted);">Click any run row to inspect exact 5-axis pipeline formula, delivery spread &amp; top campaigns</span>
       </div>
       <div class="table-wrap">
@@ -149,7 +151,7 @@
               <th>Bidding</th>
               <th>Slate</th>
               <th>Overall CTR</th>
-              <th>CTR Lift</th>
+              <th>vs R1</th>
               <th>30d Spend / Clicks</th>
               <th>eCPM</th>
               <th>Spend Gini</th>
@@ -165,22 +167,27 @@
     <section class="card">
       <div class="chart-header">
         <div>
-          <strong>30-Day Daily Trajectory (100M Impressions)</strong>
-          <div style="font-size:0.8rem;color:var(--muted);">R2/S1/P0 converges from 0.2202% (Day 1) to a 0.2514% late-month plateau (Days 16–30), winning all 30/30 days</div>
+          <strong>30-Day Daily Trajectory (100M Impressions · 3 Profiles)</strong>
+          <div style="font-size:0.8rem;color:var(--muted);">Profile 3 (Score-R1 PyTorch LR + pacing-1 + autobid-v0) jumps from 0.1993% (Day 1 cold-start) to 3.8257% late-month CTR (95.6% of 4.00% oracle ceiling), winning 29/30 days</div>
         </div>
-        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
           <div class="legend">
-            <span class="legend-item"><span class="swatch" style="background:var(--r2);"></span>R2 · S1 · P0 (UCB1 + ε)</span>
-            <span class="legend-item"><span class="swatch" style="background:var(--r1);"></span>R1 · S0 · P0 (Random)</span>
+            <span class="legend-item"><span class="swatch" style="background:var(--r3);"></span>P3 · R3 / Score-R1 / pacing-1 / autobid-v0</span>
+            <span class="legend-item"><span class="swatch" style="background:var(--r2);"></span>P2 · R2 / S1 / P0</span>
+            <span class="legend-item"><span class="swatch" style="background:var(--r1);"></span>P1 · R1 / S0 / P0</span>
           </div>
           <div class="controls" role="group" aria-label="Chart metric">
             <button class="btn active" data-metric="ctr">Daily CTR (%)</button>
             <button class="btn" data-metric="spend">Daily Spend ($)</button>
           </div>
+          <div class="controls" role="group" aria-label="Chart view">
+            <button class="btn active" data-scope="all">All 3 Profiles</button>
+            <button class="btn" data-scope="baseline">Zoom P1 vs P2</button>
+          </div>
         </div>
       </div>
       <div id="chart-container" style="width:100%;"></div>
-      <div class="chart-readout mono" id="chart-readout">Hover over any day column to inspect exact R1/S0/P0 vs R2/S1/P0 values</div>
+      <div class="chart-readout mono" id="chart-readout">Hover over any day column to inspect exact values across all 3 run profiles</div>
     </section>
 
     <section class="card" id="detail-panel"></section>
@@ -195,7 +202,7 @@
 
     <footer>
       <span>Source: <code>ad-server/src/{retrieval,bidding,timestamp,ranker,strategy}.rs</code> · <code>ml/src/model.rs</code> · <code>simulation-analyzer/src/lib.rs</code></span>
-      <span class="mono">5,000,010 requests · 20.00 ads/req · 0/500 exhausted</span>
+      <span class="mono">5,000,010 requests · 20.00 ads/req · 0/500 exhausted across all 3 runs</span>
     </footer>
   </div>
 
@@ -214,7 +221,7 @@
         { id: "S1", name: "Online UCB1 CTR", formula: "score(i) = (clicks_i / imp_i) + 0.02 * sqrt(ln(T) / imp_i)", notes: "Low-CTR-calibrated upper confidence bound." },
         { id: "S2", name: "Empirical CTR", formula: "score(i) = clicks_i / imp_i", notes: "Pure observed CTR with cold-start priority." },
         { id: "S3", name: "Empirical eCPM", formula: "score(i) = (clicks_i / imp_i) * cpc_cents", notes: "Expected revenue per impression." },
-        { id: "Score-R1", name: "PyTorch L2 LR CTR (ads-ml)", formula: "pCTR(u, c) = sigmoid(w0 + w_u + w_cat + w_adv + w_camp + w_{u,cat})", notes: "Daily cold-trained L-BFGS logistic regression over logged JSONL impressions (alias: S4)." }
+        { id: "Score-R1", name: "PyTorch L2 LR CTR (ads-ml)", formula: "pCTR(u, c) = sigmoid(w0 + w_u + w_cat + w_adv + w_camp + w_{u,cat})", notes: "Daily cold-trained L-BFGS logistic regression over exact sufficient stats (alias: S4)." }
       ],
       pacing: [
         { id: "P0", name: "Unpaced (ASAP Hard Cap)", formula: "eligible(i, d) <=> remaining_i >= cpc", notes: "No daily throttle; spends until campaign budget exhausts (alias: none)." },
@@ -230,8 +237,8 @@
 
     const BENCHMARK = {
       metrics: {
-        "R1/S0/P0": {
-          id: "R1/S0/P0",
+        "P1 · R1/S0/P0": {
+          id: "P1 · R1/S0/P0",
           retrieval: "Retrieve-V0", retrievalName: "Active Budget Pool",
           ranking: "R1", rankingName: "Random Budgeted Selector",
           scoring: "S0", scoringName: "Uniform (Unscored)",
@@ -240,11 +247,11 @@
           slate: 20,
           ctr: 0.2010, spend: "$201,037.00", clicks: "201,037", ecpm: "$2.01",
           gini: "0.094", top10: "12.9%", util: "0.72%", exhausted: "0 / 500", zeroClick: 0,
-          impRange: "198,915 – 201,271 (median 199,991, σ 416)",
+          impRange: "198,915 – 201,271 (median 199,991, σ 415)",
           maxUtil: "4.30% (advertiser-07-campaign-06)",
           daysWon: "0 / 30", runtime: "55s",
-          cli: "sim-agent --retrieval Retrieve-V0 --ranker R1 --scoring S0 --pacing P0 --bidding bidding-basebid --impressions 100000000",
-          notes: "Unbiased uniform baseline. Every campaign receives ~200,000 impressions (σ = 416), converging tightly to the 0.201% population-average CTR with minimal spend dispersion (Gini 0.094).",
+          cli: "sim-agent --retrieval Retrieve-V0 --ranker R1 --scoring S0 --pacing P0 --bidding bidding-basebid --campaign-budget-min-cents 1000000 --campaign-budget-max-cents 10000000 --impressions 100000000",
+          notes: "Unbiased uniform baseline. Every campaign receives ~200,000 impressions (σ = 415), converging tightly to the 0.201% population-average CTR with minimal spend dispersion (Gini 0.094).",
           dailyCtr: [0.2046,0.1965,0.2007,0.2004,0.2006,0.1987,0.2005,0.1973,0.1998,0.2004,0.2011,0.2043,0.2002,0.2020,0.2005,0.2021,0.1999,0.1981,0.2016,0.2025,0.1999,0.2054,0.2032,0.2070,0.2023,0.1997,0.1993,0.1998,0.2011,0.2019],
           dailySpend: [6820,6549,6691,6681,6687,6624,6684,6577,6659,6679,6704,6810,6672,6733,6682,6737,6663,6602,6721,6750,6662,6847,6772,6901,6742,6655,6642,6659,6702,6730],
           topCamps: [
@@ -253,8 +260,8 @@
             { id: "advertiser-10-campaign-08", cat: "cat-094", stat: "200,457 impr · 550 clicks (0.274%)" }
           ]
         },
-        "R2/S1/P0": {
-          id: "R2/S1/P0",
+        "P2 · R2/S1/P0": {
+          id: "P2 · R2/S1/P0",
           retrieval: "Retrieve-V0", retrievalName: "Active Budget Pool",
           ranking: "R2", rankingName: "Bandit Top-K + ε-Greedy",
           scoring: "S1", scoringName: "Online UCB1 CTR",
@@ -263,11 +270,11 @@
           slate: 20,
           ctr: 0.2463, spend: "$246,279.00", clicks: "246,279", ecpm: "$2.46",
           gini: "0.837", top10: "82.7%", util: "0.88%", exhausted: "0 / 500", zeroClick: 0,
-          impRange: "20,651 – 4,837,518 (median 36,321, σ 698,397)",
+          impRange: "20,651 – 4,837,518 (median 36,321, σ 697,698)",
           maxUtil: "66.76% (advertiser-40-campaign-06, $9,532 / $14,278)",
-          daysWon: "30 / 30", runtime: "200s",
-          cli: "sim-agent --retrieval Retrieve-V0 --ranker R2 --scoring S1 --pacing P0 --bidding bidding-basebid --impressions 100000000",
-          notes: "User-blind UCB1 bandit with 10% ε-greedy exploration and unpaced hard-cap delivery. Locks onto highest-popularity categories (cat-008, cat-094, cat-036), lifting CTR +22.54% and saturating the ~0.252% user-blind ceiling by Day 16 (Days 16–30 avg: 0.2514%).",
+          daysWon: "1 / 30", runtime: "200s",
+          cli: "sim-agent --retrieval Retrieve-V0 --ranker R2 --scoring S1 --pacing P0 --bidding bidding-basebid --campaign-budget-min-cents 1000000 --campaign-budget-max-cents 10000000 --impressions 100000000",
+          notes: "User-blind UCB1 bandit with 10% ε-greedy exploration. Wins Day 1 (0.2202%) via online intra-day learning, then saturates the ~0.252% user-blind ceiling (Days 16–30 avg: 0.2514%) while heavily concentrating spend (Gini 0.837, top-10% share 82.7%).",
           dailyCtr: [0.2202,0.2296,0.2337,0.2416,0.2388,0.2359,0.2463,0.2437,0.2474,0.2462,0.2483,0.2479,0.2441,0.2482,0.2496,0.2500,0.2506,0.2516,0.2509,0.2482,0.2480,0.2530,0.2480,0.2544,0.2529,0.2512,0.2494,0.2527,0.2533,0.2528],
           dailySpend: [7340,7655,7791,8054,7959,7862,8209,8123,8247,8207,8278,8262,8136,8273,8319,8333,8352,8388,8364,8272,8268,8433,8267,8481,8430,8373,8313,8422,8443,8425],
           topCamps: [
@@ -275,18 +282,43 @@
             { id: "advertiser-20-campaign-03", cat: "cat-094", stat: "4,837,518 impr · 12,641 clicks (0.261%)" },
             { id: "advertiser-04-campaign-05", cat: "cat-036", stat: "4,834,110 impr · 12,458 clicks (0.258%)" }
           ]
+        },
+        "P3 · R3/Score-R1/pacing-1/autobid": {
+          id: "P3 · R3/Score-R1/pacing-1/autobid",
+          retrieval: "Retrieve-V0", retrievalName: "Active Budget Pool",
+          ranking: "R3", rankingName: "Greedy Top-K",
+          scoring: "Score-R1", scoringName: "PyTorch L2 LR CTR",
+          pacing: "pacing-1", pacingName: "24h PST Intraday Linear",
+          bidding: "bidding-autobid-v0", biddingName: "eCPM Auto-Bid V0",
+          slate: 20,
+          ctr: 3.6060, spend: "$3,605,981.00", clicks: "3,605,981", ecpm: "$36.06",
+          gini: "0.136", top10: "14.2%", util: "12.88%", exhausted: "0 / 500", zeroClick: 0,
+          impRange: "82,235 – 332,408 (median 200,292, σ 47,236)",
+          maxUtil: "77.15% (advertiser-46-campaign-08, $8,697 / $11,273)",
+          daysWon: "29 / 30", runtime: "33m 20s",
+          cli: "sim-agent --retrieval Retrieve-V0 --ranker R3 --scoring Score-R1 --pacing pacing-1 --bidding bidding-autobid-v0 --campaign-budget-min-cents 1000000 --campaign-budget-max-cents 10000000 --impressions 100000000",
+          notes: "Personalized PyTorch L2 logistic regression (Score-R1) cold-trained daily on exact sufficient stats + 24h PST linear intraday pacing + eCPM autobidding. Cold-starts at 0.1993% on Day 1, leaps to 3.2291% on Day 2, and reaches 3.8257% across Days 16–30 (peaking at 3.8711% on Day 29 = 96.8% of the 4.00% oracle ceiling), while keeping Spend Gini at just 0.136 across all 500 campaigns.",
+          dailyCtr: [0.1993,3.2291,3.4521,3.5201,3.5282,3.5838,3.6151,3.6366,3.6612,3.6799,3.7009,3.7141,3.7344,3.7687,3.7697,3.7578,3.7901,3.7952,3.7913,3.8111,3.8115,3.8402,3.8282,3.8540,3.8282,3.8468,3.8431,3.8546,3.8711,3.8628],
+          dailySpend: [6645,107637,115071,117337,117608,119461,120505,121221,122040,122664,123364,123803,124480,125624,125657,125259,126338,126506,126375,127038,127050,128007,127607,128467,127608,128225,128104,128486,129035,128759],
+          topCamps: [
+            { id: "advertiser-31-campaign-07", cat: "cat-007", stat: "295,094 impr · 11,106 clicks (3.764%)" },
+            { id: "advertiser-31-campaign-05", cat: "cat-001", stat: "283,116 impr · 10,851 clicks (3.833%)" },
+            { id: "advertiser-11-campaign-03", cat: "cat-007", stat: "296,638 impr · 10,813 clicks (3.645%)" }
+          ]
         }
       }
     };
 
-    const RUN_ORDER = ["R1/S0/P0", "R2/S1/P0"];
-    let selectedRun = "R2/S1/P0";
+    const RUN_ORDER = ["P1 · R1/S0/P0", "P2 · R2/S1/P0", "P3 · R3/Score-R1/pacing-1/autobid"];
+    let selectedRun = "P3 · R3/Score-R1/pacing-1/autobid";
     let chartMetric = "ctr";
+    let chartScope = "all";
 
     function render() {
-      const r1 = BENCHMARK.metrics["R1/S0/P0"];
-      const r2 = BENCHMARK.metrics["R2/S1/P0"];
-      const liftPct = ((r2.ctr / r1.ctr) - 1) * 100;
+      const r1 = BENCHMARK.metrics["P1 · R1/S0/P0"];
+      const r2 = BENCHMARK.metrics["P2 · R2/S1/P0"];
+      const r3 = BENCHMARK.metrics["P3 · R3/Score-R1/pacing-1/autobid"];
+      const r3Mult = r3.ctr / r1.ctr;
 
       document.getElementById("kpi-strip").innerHTML = `
         <div class="card">
@@ -296,18 +328,18 @@
         </div>
         <div class="card">
           <div class="kpi-label">Best Overall CTR (100M)</div>
-          <div class="kpi-value" style="color: var(--success);">${r2.ctr.toFixed(4)}%</div>
-          <div class="kpi-sub">R2/S1/P0 (+${liftPct.toFixed(2)}% vs R1/S0/P0 ${r1.ctr.toFixed(4)}%)</div>
+          <div class="kpi-value" style="color: var(--success);">${r3.ctr.toFixed(4)}%</div>
+          <div class="kpi-sub">P3 Score-R1 (${r3Mult.toFixed(2)}× vs P1 · 3.83% Days 16–30)</div>
         </div>
         <div class="card">
           <div class="kpi-label">30-Day Revenue Lift</div>
-          <div class="kpi-value">+$45,242</div>
-          <div class="kpi-sub">R2/S1/P0 $246,279 vs R1/S0/P0 $201,037</div>
+          <div class="kpi-value">+$3,404,944</div>
+          <div class="kpi-sub">P3 $3.61M vs P2 $246k vs P1 $201k (12.88% util.)</div>
         </div>
         <div class="card">
-          <div class="kpi-label">Concentration Shift</div>
-          <div class="kpi-value">${r1.gini} &rarr; ${r2.gini}</div>
-          <div class="kpi-sub">Spend Gini · Top-10% share ${r1.top10} &rarr; ${r2.top10}</div>
+          <div class="kpi-label">Spend Fairness (Gini)</div>
+          <div class="kpi-value">${r2.gini} &rarr; ${r3.gini}</div>
+          <div class="kpi-sub">Personalized targeting + pacing-1 restores low Gini (P1: ${r1.gini})</div>
         </div>
       `;
 
@@ -315,9 +347,9 @@
       tbody.innerHTML = "";
       for (const id of RUN_ORDER) {
         const m = BENCHMARK.metrics[id];
-        const lift = id === "R1/S0/P0"
+        const lift = id === "P1 · R1/S0/P0"
           ? `<span class="badge badge-warning">Baseline</span>`
-          : `<span class="badge badge-success">+${(((m.ctr / r1.ctr) - 1) * 100).toFixed(2)}%</span>`;
+          : `<span class="badge badge-success">${(m.ctr / r1.ctr).toFixed(2)}× (+${(((m.ctr / r1.ctr) - 1) * 100).toFixed(1)}%)</span>`;
         const tr = document.createElement("tr");
         tr.className = "clickable" + (id === selectedRun ? " selected" : "");
         tr.innerHTML = `
@@ -330,7 +362,7 @@
           <td class="mono">${m.slate}</td>
           <td class="mono"><strong>${m.ctr.toFixed(4)}%</strong></td>
           <td>${lift}</td>
-          <td class="mono">${m.spend}<div style="font-size:0.74rem;color:var(--muted);">${m.clicks} clicks</div></td>
+          <td class="mono">${m.spend}<div style="font-size:0.74rem;color:var(--muted);">${m.clicks} clicks · ${m.util}</div></td>
           <td class="mono">${m.ecpm}</td>
           <td class="mono">${m.gini}</td>
           <td class="mono">${m.top10}</td>
@@ -403,32 +435,43 @@
     }
 
     function renderChart() {
-      const r1Arr = chartMetric === "ctr" ? BENCHMARK.metrics["R1/S0/P0"].dailyCtr : BENCHMARK.metrics["R1/S0/P0"].dailySpend;
-      const r2Arr = chartMetric === "ctr" ? BENCHMARK.metrics["R2/S1/P0"].dailyCtr : BENCHMARK.metrics["R2/S1/P0"].dailySpend;
-      const w = 960, h = 230, padL = 58, padR = 18, padT = 16, padB = 30;
-      const minV = chartMetric === "ctr" ? 0.19 : 6300;
-      const maxV = chartMetric === "ctr" ? 0.26 : 8700;
+      const r1Arr = chartMetric === "ctr" ? BENCHMARK.metrics["P1 · R1/S0/P0"].dailyCtr : BENCHMARK.metrics["P1 · R1/S0/P0"].dailySpend;
+      const r2Arr = chartMetric === "ctr" ? BENCHMARK.metrics["P2 · R2/S1/P0"].dailyCtr : BENCHMARK.metrics["P2 · R2/S1/P0"].dailySpend;
+      const r3Arr = chartMetric === "ctr" ? BENCHMARK.metrics["P3 · R3/Score-R1/pacing-1/autobid"].dailyCtr : BENCHMARK.metrics["P3 · R3/Score-R1/pacing-1/autobid"].dailySpend;
+
+      const w = 980, h = 250, padL = 64, padR = 20, padT = 16, padB = 30;
+      const isAll = chartScope === "all";
+      const minV = isAll ? 0 : (chartMetric === "ctr" ? 0.19 : 6300);
+      const maxV = isAll ? (chartMetric === "ctr" ? 4.0 : 135000) : (chartMetric === "ctr" ? 0.26 : 8700);
       const x = (i) => padL + (i / 29) * (w - padL - padR);
       const y = (v) => padT + (1 - (v - minV) / (maxV - minV)) * (h - padT - padB);
       const pathOf = (arr) => arr.map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-      const ticks = chartMetric === "ctr" ? [0.19, 0.20, 0.22, 0.24, 0.26] : [6500, 7000, 7500, 8000, 8500];
-      const fmtTick = (t) => chartMetric === "ctr" ? `${t.toFixed(2)}%` : `$${(t / 1000).toFixed(1)}k`;
+      const ticks = isAll
+        ? (chartMetric === "ctr" ? [0.0, 1.0, 2.0, 3.0, 4.0] : [0, 35000, 70000, 105000, 135000])
+        : (chartMetric === "ctr" ? [0.19, 0.20, 0.22, 0.24, 0.26] : [6500, 7000, 7500, 8000, 8500]);
+      const fmtTick = (t) => chartMetric === "ctr" ? `${t.toFixed(2)}%` : `$${(t / 1000).toFixed(t >= 10000 ? 0 : 1)}k`;
 
       const container = document.getElementById("chart-container");
       container.innerHTML = `
-        <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block;" role="img" aria-label="30-day R1/S0/P0 vs R2/S1/P0 trajectory">
+        <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block;" role="img" aria-label="30-day 3-profile trajectory">
           ${ticks.map((t) => `
             <line x1="${padL}" x2="${w - padR}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" stroke="var(--border)" stroke-dasharray="3 3" opacity="0.7" />
             <text x="${padL - 8}" y="${(y(t) + 4).toFixed(1)}" text-anchor="end" fill="var(--muted)" font-size="11" font-family="ui-monospace,monospace">${fmtTick(t)}</text>
           `).join("")}
+          ${isAll && chartMetric === "ctr" ? `
+            <line x1="${padL}" x2="${w - padR}" y1="${y(4.0).toFixed(1)}" y2="${y(4.0).toFixed(1)}" stroke="var(--success)" stroke-dasharray="5 4" opacity="0.45" />
+            <text x="${w - padR - 4}" y="${(y(4.0) + 13).toFixed(1)}" text-anchor="end" fill="var(--success)" font-size="10" font-family="ui-monospace,monospace">4.00% Oracle Ceiling</text>
+          ` : ""}
           ${[1, 5, 10, 15, 20, 25, 30].map((d) => `
             <text x="${x(d - 1).toFixed(1)}" y="${h - 8}" text-anchor="middle" fill="var(--muted)" font-size="11" font-family="ui-monospace,monospace">Day ${d}</text>
           `).join("")}
-          <path d="${pathOf(r1Arr)}" fill="none" stroke="var(--r1)" stroke-width="2.2" />
-          <path d="${pathOf(r2Arr)}" fill="none" stroke="var(--r2)" stroke-width="2.6" />
-          ${r2Arr.map((v, i) => `
-            <circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3" fill="var(--r2)" />
-            <circle cx="${x(i).toFixed(1)}" cy="${y(r1Arr[i]).toFixed(1)}" r="2.5" fill="var(--r1)" />
+          <path d="${pathOf(r1Arr)}" fill="none" stroke="var(--r1)" stroke-width="2" />
+          <path d="${pathOf(r2Arr)}" fill="none" stroke="var(--r2)" stroke-width="2.2" />
+          ${isAll ? `<path d="${pathOf(r3Arr)}" fill="none" stroke="var(--r3)" stroke-width="2.8" />` : ""}
+          ${r1Arr.map((_, i) => `
+            ${isAll ? `<circle cx="${x(i).toFixed(1)}" cy="${y(r3Arr[i]).toFixed(1)}" r="3.2" fill="var(--r3)" />` : ""}
+            <circle cx="${x(i).toFixed(1)}" cy="${y(r2Arr[i]).toFixed(1)}" r="2.6" fill="var(--r2)" />
+            <circle cx="${x(i).toFixed(1)}" cy="${y(r1Arr[i]).toFixed(1)}" r="2.2" fill="var(--r1)" />
             <rect x="${(x(i) - 14).toFixed(1)}" y="${padT}" width="28" height="${h - padT - padB}" fill="transparent" style="cursor:crosshair;" data-day-idx="${i}" />
           `).join("")}
         </svg>
@@ -437,12 +480,11 @@
       container.querySelectorAll("[data-day-idx]").forEach((rect) => {
         rect.addEventListener("mouseenter", () => {
           const i = Number(rect.dataset.dayIdx);
-          const v1 = r1Arr[i], v2 = r2Arr[i];
-          const lift = ((v2 / v1) - 1) * 100;
+          const v1 = r1Arr[i], v2 = r2Arr[i], v3 = r3Arr[i];
           if (chartMetric === "ctr") {
-            readout.innerHTML = `<span>Day ${i + 1}: R2/S1/P0 <strong style="color:var(--r2);">${v2.toFixed(4)}%</strong> vs R1/S0/P0 <strong>${v1.toFixed(4)}%</strong></span><span style="color:var(--success);">+${lift.toFixed(2)}% daily CTR lift</span>`;
+            readout.innerHTML = `<span>Day ${i + 1}: P3 <strong style="color:var(--r3);">${v3.toFixed(4)}%</strong> · P2 <strong style="color:var(--r2);">${v2.toFixed(4)}%</strong> · P1 <strong>${v1.toFixed(4)}%</strong></span><span style="color:var(--success);">P3 is ${(v3 / v1).toFixed(2)}× P1 &amp; ${(v3 / v2).toFixed(2)}× P2</span>`;
           } else {
-            readout.innerHTML = `<span>Day ${i + 1}: R2/S1/P0 <strong style="color:var(--r2);">$${v2.toLocaleString()}</strong> vs R1/S0/P0 <strong>$${v1.toLocaleString()}</strong></span><span style="color:var(--success);">+$${(v2 - v1).toLocaleString()} (+${lift.toFixed(2)}%)</span>`;
+            readout.innerHTML = `<span>Day ${i + 1}: P3 <strong style="color:var(--r3);">$${v3.toLocaleString()}</strong> · P2 <strong style="color:var(--r2);">$${v2.toLocaleString()}</strong> · P1 <strong>$${v1.toLocaleString()}</strong></span><span style="color:var(--success);">+$${(v3 - v1).toLocaleString()} vs P1</span>`;
           }
         });
       });
@@ -452,6 +494,14 @@
       btn.addEventListener("click", () => {
         chartMetric = btn.dataset.metric;
         document.querySelectorAll("[data-metric]").forEach((b) => b.classList.toggle("active", b === btn));
+        renderChart();
+      });
+    });
+
+    document.querySelectorAll("[data-scope]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        chartScope = btn.dataset.scope;
+        document.querySelectorAll("[data-scope]").forEach((b) => b.classList.toggle("active", b === btn));
         renderChart();
       });
     });
