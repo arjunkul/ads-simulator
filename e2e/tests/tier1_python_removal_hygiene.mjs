@@ -16,11 +16,11 @@ export const tests = [
     tier: 1,
     area: AREA,
     features: ["F1", "F2"],
-    title: "Zero .py files exist anywhere in repository tree",
+    title: "Zero legacy .py files exist outside ml/pytorch/ training subsystem",
     async fn(ctx) {
       const files = assertZeroPythonFiles(ctx.repoRoot);
       assert.ok(files.length > 0, "Expected repository files to be discovered");
-      ctx.log(`Scanned ${files.length} repository files: 0 .py files found`);
+      ctx.log(`Scanned ${files.length} repository files: 0 legacy .py files outside ml/pytorch/`);
     },
   }),
 
@@ -108,6 +108,7 @@ export const tests = [
       const rootToml = fs.readFileSync(path.join(ctx.repoRoot, "Cargo.toml"), "utf8");
       assert.ok(/\[workspace\]/.test(rootToml), "Root Cargo.toml must declare [workspace]");
       for (const member of [
+        "ml",
         "ad-server",
         "impression-generator",
         "simulation",
@@ -126,6 +127,11 @@ export const tests = [
         fs.existsSync(path.join(ctx.repoRoot, "simulation", "Cargo.lock")),
         false,
         "Nested simulation/Cargo.lock must be removed after workspace unification",
+      );
+      assert.strictEqual(
+        fs.existsSync(path.join(ctx.repoRoot, "ml", "Cargo.lock")),
+        false,
+        "Nested ml/Cargo.lock must be removed after workspace unification",
       );
       assert.strictEqual(
         fs.existsSync(path.join(ctx.repoRoot, "simulation", ".gitignore")),

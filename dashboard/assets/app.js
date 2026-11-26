@@ -105,7 +105,7 @@
     versionBadge.textContent = "v" + catalog.simulator_version;
     schemaBadge.textContent = "Schema v" + catalog.schema_version + " · " + catalog.currency;
     if (rankerBadge && ts && ts.config) {
-      rankerBadge.textContent = `Ranker ${ts.config.ranker || "R1"} · Scoring ${ts.config.scoring || "S0"} · Pacing ${ts.config.pacing || "P0"} · ${ts.config.slate_size || 20} Ads/Req`;
+      rankerBadge.textContent = `${ts.config.retrieval || "Retrieve-V0"} · Ranker ${ts.config.ranker || "R1"} · Scoring ${ts.config.scoring || "S0"} · Pacing ${ts.config.pacing || "P0"} · ${ts.config.bidding || "bidding-basebid"} · ${ts.config.slate_size || 20} Ads/Req`;
     }
     modeBadge.textContent = state.staticMode ? "Static Offline Bundle" : "Live Rust Server";
 
@@ -1156,9 +1156,11 @@
     const budget = document.getElementById("runner-budget");
     const cpc = document.getElementById("runner-cpc");
     const impr = document.getElementById("runner-impressions");
+    const retrieval = document.getElementById("runner-retrieval");
     const ranker = document.getElementById("runner-ranker");
     const scoring = document.getElementById("runner-scoring");
     const pacing = document.getElementById("runner-pacing");
+    const bidding = document.getElementById("runner-bidding");
     const slateSize = document.getElementById("runner-slate-size");
     const nat = document.getElementById("runner-natural");
 
@@ -1172,9 +1174,11 @@
         : String(ts.config.campaign_budget_cents);
     }
     if (cpc) cpc.value = String(ts.config.cpc_cents);
+    if (retrieval && ts.config.retrieval) retrieval.value = String(ts.config.retrieval);
     if (ranker && ts.config.ranker) ranker.value = String(ts.config.ranker);
     if (scoring && ts.config.scoring) scoring.value = String(ts.config.scoring);
     if (pacing && ts.config.pacing) pacing.value = String(ts.config.pacing);
+    if (bidding && ts.config.bidding) bidding.value = String(ts.config.bidding);
     if (slateSize && ts.config.slate_size) slateSize.value = String(ts.config.slate_size);
     if (ts.config.impressions === null || ts.config.impressions === undefined) {
       if (nat) nat.checked = true;
@@ -1203,7 +1207,7 @@
       ? `${fmtUsdCents(ts.config.campaign_budget_min_cents ?? 100000)}–${fmtUsdCents(ts.config.campaign_budget_max_cents ?? 1000000)}/campaign (random)`
       : `${fmtUsdCents(ts.config.campaign_budget_cents)}/campaign`;
     meta.textContent =
-      `Seed ${ts.config.sim_seed} · Ranker ${ts.config.ranker || "R1"} · Scoring ${ts.config.scoring || "S0"} · Pacing ${ts.config.pacing || "P0"} (Slate ${ts.config.slate_size || 20}) · ` +
+      `Seed ${ts.config.sim_seed} · ${ts.config.retrieval || "Retrieve-V0"} · Ranker ${ts.config.ranker || "R1"} · Scoring ${ts.config.scoring || "S0"} · Pacing ${ts.config.pacing || "P0"} · ${ts.config.bidding || "bidding-basebid"} (Slate ${ts.config.slate_size || 20}) · ` +
       `Budget ${budgetLabel} · CPC ${fmtUsdCents(ts.config.cpc_cents)} · ${modeLabel}`;
 
     const kpis = document.getElementById("budget-kpis");
@@ -1271,7 +1275,7 @@
     const dist = a.campaign_distribution;
 
     if (meta) {
-      meta.textContent = `Ranker ${a.ranker} · Scoring ${a.scoring || "S0"} · Pacing ${a.pacing || "P0"} (Slate ${a.slate_size}) · ${a.days_analyzed} days analyzed · ${fmtInt(ctr.total_ad_requests)} Ad-Server requests (${ctr.avg_ads_per_request.toFixed(2)} avg ads/req)`;
+      meta.textContent = `${a.retrieval || "Retrieve-V0"} · Ranker ${a.ranker} · Scoring ${a.scoring || "S0"} · Pacing ${a.pacing || "P0"} · ${a.bidding || "bidding-basebid"} (Slate ${a.slate_size}) · ${a.days_analyzed} days analyzed · ${fmtInt(ctr.total_ad_requests)} Ad-Server requests (${ctr.avg_ads_per_request.toFixed(2)} avg ads/req)`;
     }
 
     clearNode(kpis);
@@ -1557,9 +1561,11 @@
         const budgetRaw = (document.getElementById("runner-budget").value || "").trim();
         const cpcRaw = (document.getElementById("runner-cpc").value || "").trim();
         const imprRaw = (document.getElementById("runner-impressions").value || "").trim();
+        const retrievalEl = document.getElementById("runner-retrieval");
         const rankerEl = document.getElementById("runner-ranker");
         const scoringEl = document.getElementById("runner-scoring");
         const pacingEl = document.getElementById("runner-pacing");
+        const biddingEl = document.getElementById("runner-bidding");
         const slateEl = document.getElementById("runner-slate-size");
         const natural = Boolean(document.getElementById("runner-natural").checked);
 
@@ -1602,6 +1608,9 @@
           }
           payload.cpc_cents = v;
         }
+        if (retrievalEl && retrievalEl.value) {
+          payload.retrieval = retrievalEl.value;
+        }
         if (rankerEl && rankerEl.value) {
           payload.ranker = rankerEl.value;
         }
@@ -1610,6 +1619,9 @@
         }
         if (pacingEl && pacingEl.value) {
           payload.pacing = pacingEl.value;
+        }
+        if (biddingEl && biddingEl.value) {
+          payload.bidding = biddingEl.value;
         }
         if (slateEl && slateEl.value.trim() !== "") {
           const v = parseStrictInt(slateEl.value.trim());

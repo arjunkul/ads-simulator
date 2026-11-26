@@ -1413,15 +1413,18 @@ export function formatUsdCandidates(cents) {
 // ============================================================================
 
 /**
- * Assert zero .py files exist anywhere in repoRoot (excluding .git, .agents, target).
+ * Assert zero legacy/rogue .py files exist in repoRoot (excluding .git, .agents, target,
+ * and the sanctioned ml/pytorch/ PyTorch CTR training subsystem introduced by ads-ml).
  */
 export function assertZeroPythonFiles(repoRoot = REPO_ROOT) {
   const files = listRepoFiles(repoRoot, new Set([".git", ".agents", "target"]));
-  const pyFiles = files.filter((f) => f.toLowerCase().endsWith(".py"));
+  const pyFiles = files.filter(
+    (f) => f.toLowerCase().endsWith(".py") && !f.startsWith("ml/pytorch/"),
+  );
   assert.deepStrictEqual(
     pyFiles,
     [],
-    `Expected zero .py files in ${repoRoot}, found: ${pyFiles.join(", ")}`,
+    `Expected zero legacy .py files outside ml/pytorch/ in ${repoRoot}, found: ${pyFiles.join(", ")}`,
   );
   return files;
 }

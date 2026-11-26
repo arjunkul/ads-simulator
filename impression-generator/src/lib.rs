@@ -173,6 +173,10 @@ impl ImpressionGenerator {
             )));
         }
         ad_server.set_day(day)?;
+        let use_pst_diurnal = ad_server.pacing() == ad_server::PacingStrategy::Pacing1;
+        if !use_pst_diurnal {
+            ad_server.set_second_of_day(0)?;
+        }
 
         let quota = self.daily_quota(day);
         let mut stats = DayGenerationStats {
@@ -185,7 +189,19 @@ impl ImpressionGenerator {
                 if self.user_ids.is_empty() {
                     return Ok(stats);
                 }
-                for _ in 0..self.config.daily_requests {
+                let pst_seconds: Vec<u32> = if use_pst_diurnal {
+                    let mut v: Vec<u32> = (0..self.config.daily_requests)
+                        .map(|_| ad_server::sample_pst_second_of_day(&mut self.rng))
+                        .collect();
+                    v.sort_unstable();
+                    v
+                } else {
+                    Vec::new()
+                };
+                for req_idx in 0..self.config.daily_requests {
+                    if let Some(&sec) = pst_seconds.get(req_idx) {
+                        ad_server.set_second_of_day(sec)?;
+                    }
                     let (request_id, response) = self.generate_request(ad_server)?;
                     stats.ad_requests += 1;
                     if response.ads.is_empty() {
@@ -216,6 +232,7 @@ impl ImpressionGenerator {
                         }
                     }
                 }
+                let _ = pst_seconds.len();
             }
             Some(target_for_day) => {
                 while stats.impressions < target_for_day {
@@ -224,6 +241,12 @@ impl ImpressionGenerator {
                             "impression target cannot be reached on day {day}: no users available ({} impressions delivered)",
                             self.total_impressions_delivered
                         )));
+                    }
+                    if use_pst_diurnal && target_for_day > 0 {
+                        let frac = (stats.impressions as f64) / (target_for_day as f64);
+                        let sec = ((frac * f64::from(ad_server::SECONDS_PER_DAY)).floor() as u32)
+                            .min(ad_server::SECONDS_PER_DAY - 1);
+                        ad_server.set_second_of_day(sec)?;
                     }
                     let (request_id, response) = self.generate_request(ad_server)?;
                     stats.ad_requests += 1;

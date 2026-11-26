@@ -125,7 +125,7 @@
     <header>
       <div>
         <h1>Ads-Simulator · System Strategy Dashboard</h1>
-        <p class="subtitle">Explicit 3-axis <code>ad-server</code> strategy contract (<strong>Ranking × Scoring × Pacing</strong>) — 30-day 100M-impression benchmark (500 campaigns · 50 advertisers · 1,000 shoppers · $1 CPC · Seed 42)</p>
+        <p class="subtitle">Explicit 5-axis <code>ad-server</code> + <code>ads-ml</code> strategy contract (<strong>Retrieval × Pacing × Bidding × Scoring × Ranking</strong>) — 30-day 100M-impression benchmark (500 campaigns · 50 advertisers · 1,000 shoppers · $1 CPC · Seed 42)</p>
       </div>
       <span class="run-pill mono">100,000,000 Impr · $10k–$100k/camp · $27.99M Pool</span>
     </header>
@@ -134,17 +134,19 @@
 
     <section class="card" style="padding: 0; overflow: hidden;">
       <div style="padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-        <strong>100M-Impression Benchmark Runs (Explicit Ranking · Scoring · Pacing)</strong>
-        <span style="font-size: 0.8rem; color: var(--muted);">Click any run row to inspect exact pipeline formula, delivery spread &amp; top campaigns</span>
+        <strong>100M-Impression Benchmark Runs (Explicit Retrieval · Ranking · Scoring · Pacing · Bidding)</strong>
+        <span style="font-size: 0.8rem; color: var(--muted);">Click any run row to inspect exact 5-axis pipeline formula, delivery spread &amp; top campaigns</span>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
               <th>Run Profile</th>
+              <th>Retrieval</th>
               <th>Ranking</th>
               <th>Scoring</th>
               <th>Pacing</th>
+              <th>Bidding</th>
               <th>Slate</th>
               <th>Overall CTR</th>
               <th>CTR Lift</th>
@@ -152,7 +154,6 @@
               <th>eCPM</th>
               <th>Spend Gini</th>
               <th>Top-10%</th>
-              <th>Budget Util.</th>
               <th>Days Won</th>
             </tr>
           </thead>
@@ -186,35 +187,44 @@
 
     <section class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
-        <strong>Compiled 3-Axis Strategy Registry (<code>ad-server</code>)</strong>
-        <span style="font-size:0.8rem;color:var(--muted);">Every simulation run selects and specifies one strategy from each axis via <code>--ranker</code>, <code>--scoring</code>, and <code>--pacing</code></span>
+        <strong>Compiled 5-Axis Strategy Registry (<code>ad-server</code> + <code>ads-ml</code>)</strong>
+        <span style="font-size:0.8rem;color:var(--muted);">Every simulation run selects and specifies all 5 axes via <code>--retrieval</code>, <code>--ranker</code>, <code>--scoring</code>, <code>--pacing</code>, and <code>--bidding</code></span>
       </div>
       <div class="registry-grid" id="registry-grid"></div>
     </section>
 
     <footer>
-      <span>Source: <code>ad-server/src/ranker.rs</code> · <code>ad-server/src/strategy.rs</code> · <code>simulation-analyzer/src/lib.rs</code></span>
+      <span>Source: <code>ad-server/src/{retrieval,bidding,timestamp,ranker,strategy}.rs</code> · <code>ml/src/model.rs</code> · <code>simulation-analyzer/src/lib.rs</code></span>
       <span class="mono">5,000,010 requests · 20.00 ads/req · 0/500 exhausted</span>
     </footer>
   </div>
 
   <script>
     const REGISTRY = {
+      retrieval: [
+        { id: "Retrieve-V0", name: "Active Budget Pool (O(1) Sparse Set)", formula: "candidates(req) = { c : remaining_c >= cpc_c }", notes: "All funded campaigns via ActiveBudgetRetriever with O(1) swap-remove retirement (alias: RT0)." }
+      ],
       ranking: [
-        { id: "R1", name: "Random Budgeted Selector", formula: "Uniform sample without replacement of min(K, |eligible|) + Fisher-Yates shuffle", notes: "Unbiased baseline; requires Scoring S0." },
+        { id: "R1", name: "Random Budgeted Selector", formula: "Uniform sample without replacement of min(K, |eligible|) + Fisher-Yates shuffle", notes: "Unbiased baseline; requires Scoring S0 (alias: Rank-Uniform)." },
         { id: "R2", name: "Bandit Top-K + ε-Greedy", formula: "Cold-start (imp=0) -> Top-(K-m) by score + m ~ Bin(K, ε=0.10) explore slots", notes: "Balances exploitation with 10% uniform exploration floor." },
-        { id: "R3", name: "Greedy Top-K", formula: "Cold-start (imp=0) -> Top-K strictly by score (random tie-breaking, ε=0)", notes: "Zero ε-greedy exploration; pure top-K exploitation of chosen scorer." }
+        { id: "R3", name: "Greedy Top-K", formula: "Cold-start (imp=0) -> Top-K strictly by score (random tie-breaking, ε=0)", notes: "Zero ε-greedy exploration; pure top-K exploitation (alias: Rank-Greedy)." }
       ],
       scoring: [
-        { id: "S0", name: "Uniform (Unscored)", formula: "score(i) = 1.0", notes: "No click or impression history used." },
+        { id: "S0", name: "Uniform (Unscored)", formula: "score(i) = 1.0", notes: "No click or impression history used (alias: Score-Uniform)." },
         { id: "S1", name: "Online UCB1 CTR", formula: "score(i) = (clicks_i / imp_i) + 0.02 * sqrt(ln(T) / imp_i)", notes: "Low-CTR-calibrated upper confidence bound." },
         { id: "S2", name: "Empirical CTR", formula: "score(i) = clicks_i / imp_i", notes: "Pure observed CTR with cold-start priority." },
-        { id: "S3", name: "Empirical eCPM", formula: "score(i) = (clicks_i / imp_i) * cpc_cents", notes: "Expected revenue per impression." }
+        { id: "S3", name: "Empirical eCPM", formula: "score(i) = (clicks_i / imp_i) * cpc_cents", notes: "Expected revenue per impression." },
+        { id: "Score-R1", name: "PyTorch L2 LR CTR (ads-ml)", formula: "pCTR(u, c) = sigmoid(w0 + w_u + w_cat + w_adv + w_camp + w_{u,cat})", notes: "Daily cold-trained L-BFGS logistic regression over logged JSONL impressions (alias: S4)." }
       ],
       pacing: [
-        { id: "P0", name: "Unpaced (ASAP Hard Cap)", formula: "eligible(i, d) <=> remaining_i >= cpc", notes: "No daily throttle; spends until campaign budget exhausts." },
+        { id: "P0", name: "Unpaced (ASAP Hard Cap)", formula: "eligible(i, d) <=> remaining_i >= cpc", notes: "No daily throttle; spends until campaign budget exhausts (alias: none)." },
         { id: "P1", name: "Even Daily Cap", formula: "eligible(i, d) <=> spent_i < ceil(budget_i * d / 30)", notes: "Linear 30-day cumulative cap with unspent budget carryover." },
-        { id: "P2", name: "Smooth Probabilistic Pacing", formula: "p_pass(i, d) = clamp((daily_target_i - today_spent_i) / daily_target_i, 0, 1)", notes: "Tapers per-request eligibility smoothly; full unlock on Day 30." }
+        { id: "P2", name: "Smooth Probabilistic Pacing", formula: "p_pass(i, d) = clamp((daily_target_i - today_spent_i) / daily_target_i, 0, 1)", notes: "Tapers per-request eligibility smoothly; full unlock on Day 30." },
+        { id: "pacing-1", name: "24h PST Linear Intraday Schedule", formula: "unlock_sec(spent) = floor(86400 * spent / daily_budget); eligible <=> sec_pst >= unlock_sec", notes: "Hourly PST diurnal traffic schedule with linear intraday spend unlocking (alias: P3)." }
+      ],
+      bidding: [
+        { id: "bidding-basebid", name: "Flat Base Bid", formula: "bid(i) = cpc_cents (fixed CPC base bid)", notes: "Default flat CPC bid without predicted-CTR scaling (alias: B0)." },
+        { id: "bidding-autobid-v0", name: "eCPM Auto-Bid V0", formula: "bid(i) = score(i) * cpc_cents (1st-price eCPM ranking)", notes: "Multiplies predicted CTR score by CPC base bid for auction ordering (alias: B1)." }
       ]
     };
 
@@ -222,16 +232,18 @@
       metrics: {
         "R1/S0/P0": {
           id: "R1/S0/P0",
+          retrieval: "Retrieve-V0", retrievalName: "Active Budget Pool",
           ranking: "R1", rankingName: "Random Budgeted Selector",
           scoring: "S0", scoringName: "Uniform (Unscored)",
           pacing: "P0", pacingName: "Unpaced (ASAP Hard Cap)",
+          bidding: "bidding-basebid", biddingName: "Flat Base Bid",
           slate: 20,
           ctr: 0.2010, spend: "$201,037.00", clicks: "201,037", ecpm: "$2.01",
           gini: "0.094", top10: "12.9%", util: "0.72%", exhausted: "0 / 500", zeroClick: 0,
           impRange: "198,915 – 201,271 (median 199,991, σ 416)",
           maxUtil: "4.30% (advertiser-07-campaign-06)",
           daysWon: "0 / 30", runtime: "55s",
-          cli: "sim-agent --ranker R1 --scoring S0 --pacing P0 --impressions 100000000",
+          cli: "sim-agent --retrieval Retrieve-V0 --ranker R1 --scoring S0 --pacing P0 --bidding bidding-basebid --impressions 100000000",
           notes: "Unbiased uniform baseline. Every campaign receives ~200,000 impressions (σ = 416), converging tightly to the 0.201% population-average CTR with minimal spend dispersion (Gini 0.094).",
           dailyCtr: [0.2046,0.1965,0.2007,0.2004,0.2006,0.1987,0.2005,0.1973,0.1998,0.2004,0.2011,0.2043,0.2002,0.2020,0.2005,0.2021,0.1999,0.1981,0.2016,0.2025,0.1999,0.2054,0.2032,0.2070,0.2023,0.1997,0.1993,0.1998,0.2011,0.2019],
           dailySpend: [6820,6549,6691,6681,6687,6624,6684,6577,6659,6679,6704,6810,6672,6733,6682,6737,6663,6602,6721,6750,6662,6847,6772,6901,6742,6655,6642,6659,6702,6730],
@@ -243,16 +255,18 @@
         },
         "R2/S1/P0": {
           id: "R2/S1/P0",
+          retrieval: "Retrieve-V0", retrievalName: "Active Budget Pool",
           ranking: "R2", rankingName: "Bandit Top-K + ε-Greedy",
           scoring: "S1", scoringName: "Online UCB1 CTR",
           pacing: "P0", pacingName: "Unpaced (ASAP Hard Cap)",
+          bidding: "bidding-basebid", biddingName: "Flat Base Bid",
           slate: 20,
           ctr: 0.2463, spend: "$246,279.00", clicks: "246,279", ecpm: "$2.46",
           gini: "0.837", top10: "82.7%", util: "0.88%", exhausted: "0 / 500", zeroClick: 0,
           impRange: "20,651 – 4,837,518 (median 36,321, σ 698,397)",
           maxUtil: "66.76% (advertiser-40-campaign-06, $9,532 / $14,278)",
           daysWon: "30 / 30", runtime: "200s",
-          cli: "sim-agent --ranker R2 --scoring S1 --pacing P0 --impressions 100000000",
+          cli: "sim-agent --retrieval Retrieve-V0 --ranker R2 --scoring S1 --pacing P0 --bidding bidding-basebid --impressions 100000000",
           notes: "User-blind UCB1 bandit with 10% ε-greedy exploration and unpaced hard-cap delivery. Locks onto highest-popularity categories (cat-008, cat-094, cat-036), lifting CTR +22.54% and saturating the ~0.252% user-blind ceiling by Day 16 (Days 16–30 avg: 0.2514%).",
           dailyCtr: [0.2202,0.2296,0.2337,0.2416,0.2388,0.2359,0.2463,0.2437,0.2474,0.2462,0.2483,0.2479,0.2441,0.2482,0.2496,0.2500,0.2506,0.2516,0.2509,0.2482,0.2480,0.2530,0.2480,0.2544,0.2529,0.2512,0.2494,0.2527,0.2533,0.2528],
           dailySpend: [7340,7655,7791,8054,7959,7862,8209,8123,8247,8207,8278,8262,8136,8273,8319,8333,8352,8388,8364,8272,8268,8433,8267,8481,8430,8373,8313,8422,8443,8425],
@@ -276,9 +290,9 @@
 
       document.getElementById("kpi-strip").innerHTML = `
         <div class="card">
-          <div class="kpi-label">Registered Strategy Axes</div>
-          <div class="kpi-value">3 × 4 × 3</div>
-          <div class="kpi-sub">3 Ranking (R1–R3) · 4 Scoring (S0–S3) · 3 Pacing (P0–P2)</div>
+          <div class="kpi-label">Registered 5-Axis Stack</div>
+          <div class="kpi-value">1 × 3 × 5 × 4 × 2</div>
+          <div class="kpi-sub">1 Retrieval · 3 Ranking · 5 Scoring · 4 Pacing · 2 Bidding</div>
         </div>
         <div class="card">
           <div class="kpi-label">Best Overall CTR (100M)</div>
@@ -308,9 +322,11 @@
         tr.className = "clickable" + (id === selectedRun ? " selected" : "");
         tr.innerHTML = `
           <td><strong class="mono">${m.id}</strong><div style="font-size:0.75rem;color:var(--muted);">Runtime ${m.runtime}</div></td>
+          <td><span class="badge badge-primary mono">${m.retrieval}</span><div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">${m.retrievalName}</div></td>
           <td><span class="badge badge-success mono">${m.ranking}</span><div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">${m.rankingName}</div></td>
           <td><span class="badge badge-purple mono">${m.scoring}</span><div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">${m.scoringName}</div></td>
           <td><span class="badge badge-warning mono">${m.pacing}</span><div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">${m.pacingName}</div></td>
+          <td><span class="badge badge-primary mono">${m.bidding}</span><div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">${m.biddingName}</div></td>
           <td class="mono">${m.slate}</td>
           <td class="mono"><strong>${m.ctr.toFixed(4)}%</strong></td>
           <td>${lift}</td>
@@ -318,7 +334,6 @@
           <td class="mono">${m.ecpm}</td>
           <td class="mono">${m.gini}</td>
           <td class="mono">${m.top10}</td>
-          <td class="mono">${m.util}</td>
           <td class="mono">${m.daysWon}</td>
         `;
         tr.addEventListener("click", () => { selectedRun = id; render(); });
@@ -329,20 +344,23 @@
       document.getElementById("detail-panel").innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span class="badge badge-primary mono">${sel.retrieval}</span>
             <span class="badge badge-success mono">Ranking ${sel.ranking}</span>
             <span class="badge badge-purple mono">Scoring ${sel.scoring}</span>
             <span class="badge badge-warning mono">Pacing ${sel.pacing}</span>
-            <strong style="margin-left:6px;font-size:1.02rem;">${sel.rankingName} · ${sel.scoringName} · ${sel.pacingName}</strong>
+            <span class="badge badge-primary mono">${sel.bidding}</span>
           </div>
           <code style="color:var(--muted);">${sel.cli}</code>
         </div>
         <p style="margin:10px 0 0;color:var(--muted);font-size:0.89rem;">${sel.notes}</p>
         <div class="detail-grid">
           <div class="detail-box">
-            <h3>Active Strategy Triple</h3>
-            <div><strong>Ranking (${sel.ranking}):</strong> ${REGISTRY.ranking.find((x) => x.id === sel.ranking).formula}</div>
+            <h3>Active 5-Axis Strategy Stack</h3>
+            <div><strong>Retrieval (${sel.retrieval}):</strong> ${REGISTRY.retrieval.find((x) => x.id === sel.retrieval).formula}</div>
+            <div style="margin-top:4px;"><strong>Ranking (${sel.ranking}):</strong> ${REGISTRY.ranking.find((x) => x.id === sel.ranking).formula}</div>
             <div style="margin-top:4px;"><strong>Scoring (${sel.scoring}):</strong> ${REGISTRY.scoring.find((x) => x.id === sel.scoring).formula}</div>
             <div style="margin-top:4px;"><strong>Pacing (${sel.pacing}):</strong> ${REGISTRY.pacing.find((x) => x.id === sel.pacing).formula}</div>
+            <div style="margin-top:4px;"><strong>Bidding (${sel.bidding}):</strong> ${REGISTRY.bidding.find((x) => x.id === sel.bidding).formula}</div>
           </div>
           <div class="detail-box">
             <h3>Delivery Distribution (100M Impr)</h3>
@@ -360,9 +378,11 @@
       `;
 
       document.getElementById("registry-grid").innerHTML = [
+        { title: "Retrieval Strategies (--retrieval)", badge: "badge-primary", items: REGISTRY.retrieval },
         { title: "Ranking Strategies (--ranker)", badge: "badge-success", items: REGISTRY.ranking },
         { title: "Scoring Strategies (--scoring)", badge: "badge-purple", items: REGISTRY.scoring },
-        { title: "Pacing Strategies (--pacing)", badge: "badge-warning", items: REGISTRY.pacing }
+        { title: "Pacing Strategies (--pacing)", badge: "badge-warning", items: REGISTRY.pacing },
+        { title: "Bidding Strategies (--bidding)", badge: "badge-primary", items: REGISTRY.bidding }
       ].map((grp) => `
         <div class="detail-box">
           <h3>${grp.title}</h3>

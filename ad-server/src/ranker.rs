@@ -9,12 +9,13 @@
 use std::fmt;
 use std::str::FromStr;
 
+use ads_ml::PreparedScorer;
 use rand::Rng;
 use rand::seq::{SliceRandom, index};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 
-use crate::{CampaignState, DEFAULT_CPC_CENTS, ScoringStrategy};
+use crate::{BiddingStrategy, CampaignState, DEFAULT_CPC_CENTS, ScoringStrategy, compute_bid};
 
 /// Default number of distinct funded campaigns returned per ad-server request under Strategy R1.
 pub const R1_SLATE_SIZE: usize = 20;
@@ -27,18 +28,25 @@ pub const R2_EPSILON: f64 = 0.10;
 /// Low-CTR-calibrated UCB1 exploration coefficient for Scoring S1.
 pub const R2_UCB_EXPLORATION_C: f64 = 0.02;
 
+/// Optional request-time ML scoring and bidding context passed from [`crate::AdServer`].
+pub struct ServingContext<'a> {
+    pub user_index: Option<usize>,
+    pub ml_scorer: Option<&'a PreparedScorer>,
+    pub bidding: BiddingStrategy,
+}
+
 /// Supported ads-ranker (slate selection) strategies.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RankerStrategy {
-    /// Strategy R1: select up to 20 distinct random campaigns that currently have budget.
+    /// Strategy R1 (`Rank-Uniform`): select up to 20 distinct random campaigns that currently have budget.
     #[default]
-    #[serde(rename = "R1", alias = "r1", alias = "random")]
+    #[serde(rename = "R1", alias = "r1", alias = "Rank-Uniform", alias = "rank-uniform", alias = "random")]
     R1,
     /// Strategy R2: cold-start priority + Top-K by score with 10% ε-greedy exploration.
     #[serde(rename = "R2", alias = "r2", alias = "eps_greedy")]
     R2,
-    /// Strategy R3: cold-start priority + pure Greedy Top-K by score (0% ε-greedy).
-    #[serde(rename = "R3", alias = "r3", alias = "greedy")]
+    /// Strategy R3 (`Rank-Greedy`): cold-start priority + pure Greedy Top-K by score (0% ε-greedy).
+    #[serde(rename = "R3", alias = "r3", alias = "Rank-Greedy", alias = "rank-greedy", alias = "greedy")]
     R3,
 }
 
@@ -60,9 +68,9 @@ impl RankerStrategy {
     /// Short human-readable strategy name.
     pub const fn name(self) -> &'static str {
         match self {
-            RankerStrategy::R1 => "Random Budgeted Selector",
+            RankerStrategy::R1 => "Random Budgeted Selector (Rank-Uniform)",
             RankerStrategy::R2 => "Bandit Top-K + ε-Greedy",
-            RankerStrategy::R3 => "Greedy Top-K",
+            RankerStrategy::R3 => "Greedy Top-K (Rank-Greedy)",
         }
     }
 
@@ -148,11 +156,11 @@ impl FromStr for RankerStrategy {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim().to_ascii_uppercase().as_str() {
-            "R1" | "RANDOM" => Ok(RankerStrategy::R1),
+            "R1" | "RANK-UNIFORM" | "UNIFORM" | "RANDOM" => Ok(RankerStrategy::R1),
             "R2" | "EPS_GREEDY" | "BANDIT" => Ok(RankerStrategy::R2),
-            "R3" | "GREEDY" | "TOP_K" => Ok(RankerStrategy::R3),
+            "R3" | "RANK-GREEDY" | "GREEDY" | "TOP_K" => Ok(RankerStrategy::R3),
             other => Err(format!(
-                "unknown ranker strategy '{other}' (supported: R1/random, R2/eps_greedy, R3/greedy)"
+                "unknown ranker strategy '{other}' (supported: R1/Rank-Uniform, R2/eps_greedy, R3/Rank-Greedy)"
             )),
         }
     }
@@ -160,7 +168,7 @@ impl FromStr for RankerStrategy {
 
 /// Pluggable ranking/selection strategy invoked by [`crate::AdServer::serve_ads`].
 ///
-/// Implementations receive the requesting `user_id`, the list of currently eligible (funded &
+/// Implementations receive the requesting `user_id`, the list of currently eligible (retrieved &
 /// paced) campaign indices, read-only campaign states, and the ad-server's deterministic RNG
 /// stream, and return an ordered list of distinct campaign indices to serve.
 pub trait AdsRanker: Send + Sync {
@@ -178,6 +186,18 @@ pub trait AdsRanker: Send + Sync {
         campaigns: &[CampaignState],
         rng: &mut ChaCha8Rng,
     ) -> Vec<usize>;
+
+    /// Select campaigns with optional request-time ML scorer (`Score-R1`) and bidding context.
+    fn select_campaigns_with_context(
+        &self,
+        user_id: &str,
+        eligible_indices: &[usize],
+        campaigns: &[CampaignState],
+        _ctx: &ServingContext<'_>,
+        rng: &mut ChaCha8Rng,
+    ) -> Vec<usize> {
+        self.select_campaigns(user_id, eligible_indices, campaigns, rng)
+    }
 }
 
 /// Strategy R1: selects up to `slate_size` (default 20) distinct campaigns uniformly at random
@@ -322,6 +342,7 @@ impl Default for R3GreedyTopKRanker {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn select_scored_slate(
     slate_size: usize,
     epsilon: f64,
@@ -330,6 +351,7 @@ fn select_scored_slate(
     cpc_cents: u64,
     eligible_indices: &[usize],
     campaigns: &[CampaignState],
+    ctx: Option<&ServingContext<'_>>,
     rng: &mut ChaCha8Rng,
 ) -> Vec<usize> {
     let target = slate_size.min(eligible_indices.len());
@@ -337,48 +359,72 @@ fn select_scored_slate(
         return Vec::new();
     }
 
-    let mut cold_start = Vec::new();
-    let mut observed = Vec::new();
-    let mut total_impressions = 0u64;
-
-    for &idx in eligible_indices {
-        let imp = campaigns
-            .get(idx)
-            .map(|c| c.totals.impressions)
-            .unwrap_or(0);
-        total_impressions = total_impressions.saturating_add(imp);
-        if imp == 0 {
-            cold_start.push(idx);
-        } else {
-            observed.push(idx);
-        }
-    }
-
+    let bidding = ctx.map(|c| c.bidding).unwrap_or(BiddingStrategy::Basebid);
     let mut selected = Vec::with_capacity(target);
 
-    // 1. Cold-start pass: uniformly explore unvisited funded campaigns first.
-    if !cold_start.is_empty() {
-        let take_cold = target.min(cold_start.len());
-        let mut positions = index::sample(rng, cold_start.len(), take_cold).into_vec();
-        positions.shuffle(rng);
-        for pos in positions {
-            selected.push(cold_start[pos]);
+    // When Score-R1 (PyTorch logistic regression) is active, score all eligible campaigns directly
+    // via the daily trained PreparedScorer (or uniform cold-start on Day 1 before any model exists).
+    let (observed, total_impressions) = if scoring == ScoringStrategy::ScoreR1 {
+        (eligible_indices.to_vec(), 1u64)
+    } else {
+        let mut cold_start = Vec::new();
+        let mut observed = Vec::new();
+        let mut total_impressions = 0u64;
+
+        for &idx in eligible_indices {
+            let imp = campaigns
+                .get(idx)
+                .map(|c| c.totals.impressions)
+                .unwrap_or(0);
+            total_impressions = total_impressions.saturating_add(imp);
+            if imp == 0 {
+                cold_start.push(idx);
+            } else {
+                observed.push(idx);
+            }
         }
-    }
+
+        // 1. Cold-start pass: uniformly explore unvisited funded campaigns first.
+        if !cold_start.is_empty() {
+            let take_cold = target.min(cold_start.len());
+            let mut positions = index::sample(rng, cold_start.len(), take_cold).into_vec();
+            positions.shuffle(rng);
+            for pos in positions {
+                selected.push(cold_start[pos]);
+            }
+        }
+
+        (observed, total_impressions)
+    };
 
     let remaining_slots = target.saturating_sub(selected.len());
     if remaining_slots == 0 || observed.is_empty() {
         return selected;
     }
 
-    // 2. Score observed funded campaigns via the active ScoringStrategy with random tie-breaking.
+    // 2. Score observed funded campaigns via the active ScoringStrategy + BiddingStrategy.
     let ln_t = (total_impressions.max(1) as f64).ln().max(0.0);
+    let ml_pair = ctx.and_then(|c| c.ml_scorer.zip(c.user_index));
     let mut scored: Vec<(usize, f64, u64)> = observed
         .into_iter()
         .map(|idx| {
-            let score = scoring.score_observed(&campaigns[idx], ln_t, cpc_cents, exploration_c);
+            let raw_score = if scoring == ScoringStrategy::ScoreR1 {
+                match ml_pair {
+                    Some((scorer, user_idx)) => scorer.score_ctr(user_idx, 0, idx),
+                    None => 1.0,
+                }
+            } else {
+                scoring.score_observed(&campaigns[idx], ln_t, cpc_cents, exploration_c)
+            };
+            let rank_score = match bidding {
+                BiddingStrategy::Basebid => raw_score,
+                BiddingStrategy::AutobidV0 => {
+                    compute_bid(BiddingStrategy::AutobidV0, cpc_cents, raw_score, 1.0)
+                        .final_bid_cents
+                }
+            };
             let tie_breaker: u64 = rng.random();
-            (idx, score, tie_breaker)
+            (idx, rank_score, tie_breaker)
         })
         .collect();
 
@@ -442,6 +488,28 @@ impl AdsRanker for R2OnlineCtrRanker {
             self.cpc_cents,
             eligible_indices,
             campaigns,
+            None,
+            rng,
+        )
+    }
+
+    fn select_campaigns_with_context(
+        &self,
+        _user_id: &str,
+        eligible_indices: &[usize],
+        campaigns: &[CampaignState],
+        ctx: &ServingContext<'_>,
+        rng: &mut ChaCha8Rng,
+    ) -> Vec<usize> {
+        select_scored_slate(
+            self.slate_size,
+            self.epsilon,
+            self.exploration_c,
+            self.scoring,
+            self.cpc_cents,
+            eligible_indices,
+            campaigns,
+            Some(ctx),
             rng,
         )
     }
@@ -471,6 +539,28 @@ impl AdsRanker for R3GreedyTopKRanker {
             self.cpc_cents,
             eligible_indices,
             campaigns,
+            None,
+            rng,
+        )
+    }
+
+    fn select_campaigns_with_context(
+        &self,
+        _user_id: &str,
+        eligible_indices: &[usize],
+        campaigns: &[CampaignState],
+        ctx: &ServingContext<'_>,
+        rng: &mut ChaCha8Rng,
+    ) -> Vec<usize> {
+        select_scored_slate(
+            self.slate_size,
+            0.0,
+            self.exploration_c,
+            self.scoring,
+            self.cpc_cents,
+            eligible_indices,
+            campaigns,
+            Some(ctx),
             rng,
         )
     }

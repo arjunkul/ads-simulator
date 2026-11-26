@@ -1,16 +1,21 @@
 //! Seeded 30-day click-only CPC ad marketplace simulation library.
 //!
 //! Wires [`impression_generator::ImpressionGenerator`] (user-independent ad-request stream),
-//! [`ad_server::AdServer`] (campaign budget pool + pluggable [`ad_server::RankerStrategy`],
-//! starting with `R1` = 20 random budgeted campaigns), and shopper click evaluation.
+//! [`ad_server::AdServer`] (campaign budget pool + explicit 5-axis `Retrieval × Pacing × Bidding
+//! × Scoring × Ranking` strategy pipeline), `ads-ml` PyTorch daily CTR training (`Score-R1`),
+//! and shopper click evaluation.
 
 pub mod simulation;
 
 pub use ad_server::{
-    AdResponse, AdServer, AdServerConfig, AdServerSpec, AdsRanker, PacingStrategy, R1_SLATE_SIZE,
-    R1RandomBudgetedRanker, R2_EPSILON, R2_SLATE_SIZE, R2_UCB_EXPLORATION_C, R2OnlineCtrRanker,
-    R3_SLATE_SIZE, R3GreedyTopKRanker, RankerStrategy, ScoringStrategy, ServedAd, StrategyInfo,
-    StrategyProfile, ad_server_spec, validate_strategy,
+    ActiveBudgetRetriever, AdResponse, AdServer, AdServerConfig, AdServerSpec, AdsRanker,
+    AuctionWinner, Bid, BiddingStrategy, CampaignRetriever, DEFAULT_BIDDING, DEFAULT_RETRIEVAL,
+    HOURS_PER_DAY, PacingStrategy, PstTimestamp, R1_SLATE_SIZE, R1RandomBudgetedRanker, R2_EPSILON,
+    R2_SLATE_SIZE, R2_UCB_EXPLORATION_C, R2OnlineCtrRanker, R3_SLATE_SIZE, R3GreedyTopKRanker,
+    RankerStrategy, RetrievalRequest, RetrievalStrategy, SECONDS_PER_DAY, SECONDS_PER_HOUR,
+    ScoringStrategy, ServedAd, StrategyInfo, StrategyProfile, TIMEZONE_LABEL, ad_server_spec,
+    build_retriever, compute_bid, daily_budget_cents, pacing_1_unlock_second,
+    run_first_price_auction, sample_pst_second_of_day, validate_strategy,
 };
 pub use impression_generator::{
     DEFAULT_DAILY_REQUESTS, DayGenerationStats, GeneratedImpression, ImpressionGenerator,
@@ -21,7 +26,7 @@ pub use simulation::{
     DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS, DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_PACING,
     DEFAULT_RANKER, DEFAULT_SCORING, DEFAULT_SEED, DEFAULT_SLATE_SIZE, DailyActivity, Day,
     MAX_CLICK_PROBABILITY, OwnedCampaign, OwnedReport, Report, SCHEMA_VERSION, SimulationSpec,
-    Summary, run, simulation_spec,
+    Summary, run, run_with_log_dir, simulation_spec,
 };
 
 #[cfg(test)]
@@ -29,10 +34,11 @@ mod tests {
     use ads_simulator::generate_marketplace;
 
     use crate::{
-        CAMPAIGNS_PER_ADVERTISER, Config, DAYS, DEFAULT_CPC_CENTS, DEFAULT_DAILY_REQUESTS,
-        DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS, DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_PACING,
-        DEFAULT_RANKER, DEFAULT_SCORING, DEFAULT_SEED, DEFAULT_SLATE_SIZE, MAX_CLICK_PROBABILITY,
-        OwnedReport, PacingStrategy, RankerStrategy, SCHEMA_VERSION, ScoringStrategy,
+        BiddingStrategy, CAMPAIGNS_PER_ADVERTISER, Config, DAYS, DEFAULT_BIDDING,
+        DEFAULT_CPC_CENTS, DEFAULT_DAILY_REQUESTS, DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
+        DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_PACING, DEFAULT_RANKER, DEFAULT_RETRIEVAL,
+        DEFAULT_SCORING, DEFAULT_SEED, DEFAULT_SLATE_SIZE, MAX_CLICK_PROBABILITY, OwnedReport,
+        PacingStrategy, RankerStrategy, RetrievalStrategy, SCHEMA_VERSION, ScoringStrategy,
         SimulationSpec, run, simulation_spec,
     };
 
@@ -53,9 +59,11 @@ mod tests {
             DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS
         );
         assert_eq!(spec.default_cpc_cents, DEFAULT_CPC_CENTS);
+        assert_eq!(spec.default_retrieval, DEFAULT_RETRIEVAL);
         assert_eq!(spec.default_ranker, DEFAULT_RANKER);
         assert_eq!(spec.default_scoring, DEFAULT_SCORING);
         assert_eq!(spec.default_pacing, DEFAULT_PACING);
+        assert_eq!(spec.default_bidding, DEFAULT_BIDDING);
         assert_eq!(spec.default_slate_size, DEFAULT_SLATE_SIZE);
         assert_eq!(spec.default_daily_requests, DEFAULT_DAILY_REQUESTS);
 
@@ -74,9 +82,11 @@ mod tests {
             campaign_budget_max_cents: DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
             cpc_cents: DEFAULT_CPC_CENTS,
             impressions: Some(1_000_000),
+            retrieval: RetrievalStrategy::RetrieveV0,
             ranker: RankerStrategy::R1,
             scoring: ScoringStrategy::S0,
             pacing: PacingStrategy::P0,
+            bidding: BiddingStrategy::Basebid,
             slate_size: DEFAULT_SLATE_SIZE,
         };
         let report = run(&marketplace, config).unwrap();
@@ -84,9 +94,11 @@ mod tests {
         assert_eq!(report.schema_version, SCHEMA_VERSION);
         assert_eq!(report.currency, "USD");
         assert_eq!(report.config, config);
+        assert_eq!(report.strategy.retrieval, RetrievalStrategy::RetrieveV0);
         assert_eq!(report.strategy.ranking, RankerStrategy::R1);
         assert_eq!(report.strategy.scoring, ScoringStrategy::S0);
         assert_eq!(report.strategy.pacing, PacingStrategy::P0);
+        assert_eq!(report.strategy.bidding, BiddingStrategy::Basebid);
         assert_eq!(report.days.len(), DAYS);
         assert_eq!(report.campaigns.len(), 500);
         let summed_budget: u64 = report.campaigns.iter().map(|c| c.budget_cents).sum();

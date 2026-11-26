@@ -1,22 +1,31 @@
 //! 30-day CPC simulation orchestrator.
 //!
-//! Decouples ad-impression generation ([`impression_generator::ImpressionGenerator`]),
-//! ad serving & ranking ([`ad_server::AdServer`] with Strategy [`RankerStrategy::R1`]),
-//! and shopper click evaluation ([`ads_simulator::score_preference`] × 4%).
+//! Wires [`impression_generator::ImpressionGenerator`] (user-independent ad-request stream with
+//! optional PST diurnal timestamps for `pacing-1`), [`ad_server::AdServer`] (explicit 5-axis
+//! `Retrieval × Pacing × Bidding × Scoring × Ranking` strategy pipeline, including `Retrieve-V0`,
+//! `Pacing-1`, `bidding-autobid-v0`, and daily PyTorch `Score-R1` training via `ads-ml`), and
+//! shopper click evaluation (`score_preference(user, ad_item) * 4%`).
 
 use std::{
     collections::HashMap,
     io::{Error, ErrorKind},
+    path::Path,
 };
 
 use ad_server::{
-    AdServer, AdServerConfig, CAMPAIGNS_PER_ADVERTISER as SERVER_CAMPAIGNS_PER_ADVERTISER,
-    CampaignState, DAYS as SERVER_DAYS, DEFAULT_CPC_CENTS as SERVER_DEFAULT_CPC,
+    AdServer, AdServerConfig, BiddingStrategy,
+    CAMPAIGNS_PER_ADVERTISER as SERVER_CAMPAIGNS_PER_ADVERTISER, CampaignState,
+    DAYS as SERVER_DAYS, DEFAULT_BIDDING as SERVER_DEFAULT_BIDDING,
+    DEFAULT_CPC_CENTS as SERVER_DEFAULT_CPC,
     DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS as SERVER_DEFAULT_MAX_BUDGET,
     DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS as SERVER_DEFAULT_MIN_BUDGET,
-    DEFAULT_PACING as SERVER_DEFAULT_PACING, DEFAULT_SCORING as SERVER_DEFAULT_SCORING,
-    DEFAULT_SEED as SERVER_DEFAULT_SEED, PacingStrategy, R1_SLATE_SIZE, RankerStrategy,
-    SCHEMA_VERSION as SERVER_SCHEMA_VERSION, ScoringStrategy, StrategyProfile,
+    DEFAULT_PACING as SERVER_DEFAULT_PACING, DEFAULT_RETRIEVAL as SERVER_DEFAULT_RETRIEVAL,
+    DEFAULT_SCORING as SERVER_DEFAULT_SCORING, DEFAULT_SEED as SERVER_DEFAULT_SEED, PacingStrategy,
+    R1_SLATE_SIZE, RankerStrategy, RetrievalStrategy, SCHEMA_VERSION as SERVER_SCHEMA_VERSION,
+    ScoringStrategy, StrategyProfile,
+};
+use ads_ml::{
+    AdCandidate, ImpressionClickRef, ImpressionLogStore, PyTorchTrainer, TrainingConfig,
 };
 use ads_simulator::{Item, Marketplace, User, score_preference};
 use impression_generator::{
@@ -25,6 +34,7 @@ use impression_generator::{
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
+use tempfile::TempDir;
 
 pub const SCHEMA_VERSION: u32 = SERVER_SCHEMA_VERSION;
 pub const DAYS: usize = SERVER_DAYS;
@@ -34,9 +44,11 @@ pub const DEFAULT_SEED: u64 = SERVER_DEFAULT_SEED;
 pub const DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS: u64 = SERVER_DEFAULT_MIN_BUDGET;
 pub const DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS: u64 = SERVER_DEFAULT_MAX_BUDGET;
 pub const DEFAULT_CPC_CENTS: u64 = SERVER_DEFAULT_CPC;
+pub const DEFAULT_RETRIEVAL: RetrievalStrategy = SERVER_DEFAULT_RETRIEVAL;
 pub const DEFAULT_RANKER: RankerStrategy = RankerStrategy::R1;
 pub const DEFAULT_SCORING: ScoringStrategy = SERVER_DEFAULT_SCORING;
 pub const DEFAULT_PACING: PacingStrategy = SERVER_DEFAULT_PACING;
+pub const DEFAULT_BIDDING: BiddingStrategy = SERVER_DEFAULT_BIDDING;
 pub const DEFAULT_SLATE_SIZE: usize = R1_SLATE_SIZE;
 pub const CLICK_RNG_STREAM: u64 = 2;
 
@@ -62,11 +74,15 @@ pub struct SimulationSpec {
     pub default_min_campaign_budget_cents: u64,
     pub default_max_campaign_budget_cents: u64,
     pub default_cpc_cents: u64,
+    #[serde(default)]
+    pub default_retrieval: RetrievalStrategy,
     pub default_ranker: RankerStrategy,
     #[serde(default)]
     pub default_scoring: ScoringStrategy,
     #[serde(default)]
     pub default_pacing: PacingStrategy,
+    #[serde(default)]
+    pub default_bidding: BiddingStrategy,
     pub default_slate_size: usize,
     pub default_daily_requests: usize,
 }
@@ -82,9 +98,11 @@ pub const fn simulation_spec() -> SimulationSpec {
         default_min_campaign_budget_cents: DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS,
         default_max_campaign_budget_cents: DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
         default_cpc_cents: DEFAULT_CPC_CENTS,
+        default_retrieval: DEFAULT_RETRIEVAL,
         default_ranker: DEFAULT_RANKER,
         default_scoring: DEFAULT_SCORING,
         default_pacing: DEFAULT_PACING,
+        default_bidding: DEFAULT_BIDDING,
         default_slate_size: DEFAULT_SLATE_SIZE,
         default_daily_requests: DEFAULT_DAILY_REQUESTS,
     }
@@ -104,19 +122,30 @@ pub struct Config {
     pub cpc_cents: u64,
     pub impressions: Option<u64>,
     #[serde(default)]
+    pub retrieval: RetrievalStrategy,
+    #[serde(default)]
     pub ranker: RankerStrategy,
     #[serde(default)]
     pub scoring: ScoringStrategy,
     #[serde(default)]
     pub pacing: PacingStrategy,
+    #[serde(default)]
+    pub bidding: BiddingStrategy,
     #[serde(default = "default_slate_size")]
     pub slate_size: usize,
 }
 
 impl Config {
-    /// Return the explicit 3-axis [`StrategyProfile`] specified by this configuration.
+    /// Return the explicit 5-axis [`StrategyProfile`] specified by this configuration.
     pub fn strategy_profile(&self) -> StrategyProfile {
-        StrategyProfile::new(self.ranker, self.scoring, self.pacing, self.slate_size)
+        StrategyProfile::new(
+            self.retrieval,
+            self.ranker,
+            self.scoring,
+            self.pacing,
+            self.bidding,
+            self.slate_size,
+        )
     }
 }
 
@@ -129,9 +158,11 @@ impl Default for Config {
             campaign_budget_max_cents: DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
             cpc_cents: DEFAULT_CPC_CENTS,
             impressions: None,
+            retrieval: DEFAULT_RETRIEVAL,
             ranker: DEFAULT_RANKER,
             scoring: DEFAULT_SCORING,
             pacing: DEFAULT_PACING,
+            bidding: DEFAULT_BIDDING,
             slate_size: DEFAULT_SLATE_SIZE,
         }
     }
@@ -387,12 +418,18 @@ fn map_campaigns<'a>(
         .collect()
 }
 
-/// Run the 30-day CPC simulation by wiring:
-/// 1. [`ImpressionGenerator`] (user-independent request generator operating only on `user_ids`),
-/// 2. [`AdServer`] (stateful budget pool + pluggable [`RankerStrategy`], defaulting to R1 = 20
-///    random distinct funded campaigns per `serve_ads(user_id)` call),
-/// 3. External shopper click model (`score_preference(user, ad_item) * 0.04`).
+/// Run the 30-day CPC simulation with default temporary ML log storage when `Score-R1` is active.
 pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Error> {
+    run_with_log_dir(marketplace, config, None)
+}
+
+/// Run the 30-day CPC simulation, optionally persisting daily `ads-ml` JSONL impression-click
+/// logs and trained PyTorch model checkpoints to `impression_log_dir`.
+pub fn run_with_log_dir<'a>(
+    marketplace: &'a Marketplace,
+    config: Config,
+    impression_log_dir: Option<&Path>,
+) -> Result<Report<'a>, Error> {
     if marketplace.schema_version != SCHEMA_VERSION || marketplace.currency != "USD" {
         return Err(invalid("expected schema version 1 marketplace data in USD"));
     }
@@ -414,17 +451,42 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
             campaign_budget_min_cents: config.campaign_budget_min_cents,
             campaign_budget_max_cents: config.campaign_budget_max_cents,
             cpc_cents: config.cpc_cents,
+            retrieval: config.retrieval,
             ranker: config.ranker,
             scoring: config.scoring,
             pacing: config.pacing,
+            bidding: config.bidding,
             slate_size: config.slate_size,
         },
     )?;
     let budget_cents = ad_server.total_budget_cents();
     let strategy = ad_server.strategy_profile();
 
+    let use_ml_scoring = config.scoring == ScoringStrategy::ScoreR1;
+    let _temp_log_dir: Option<TempDir>;
+    let log_store: Option<ImpressionLogStore> = if let Some(dir) = impression_log_dir {
+        _temp_log_dir = None;
+        let store = ImpressionLogStore::new(dir);
+        store.clear()?;
+        Some(store)
+    } else if use_ml_scoring {
+        let tmp = TempDir::new()?;
+        let store = ImpressionLogStore::new(tmp.path());
+        _temp_log_dir = Some(tmp);
+        Some(store)
+    } else {
+        _temp_log_dir = None;
+        None
+    };
+
+    let mut trainer = if use_ml_scoring {
+        Some(PyTorchTrainer::spawn()?)
+    } else {
+        None
+    };
+
     let mut impression_generator = ImpressionGenerator::new(
-        user_ids,
+        user_ids.clone(),
         ImpressionGeneratorConfig {
             seed: config.seed,
             days: DAYS,
@@ -443,6 +505,12 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
     let mut insufficient_budget = 0u64;
 
     for day in 1..=DAYS {
+        let mut day_writer = match &log_store {
+            Some(store) => Some(store.create_day_writer(day)?),
+            None => None,
+        };
+        let mut write_err: Option<Error> = None;
+
         let day_stats = impression_generator.run_day(day, &mut ad_server, |impression| {
             let user = user_lookup
                 .get(impression.user_id.as_str())
@@ -454,8 +522,59 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
                 ))
                 .expect("ad server only emits known catalog items");
             let score = score_preference(user, item);
-            click_rng.random_bool(MAX_CLICK_PROBABILITY * score)
+            let clicked = click_rng.random_bool(MAX_CLICK_PROBABILITY * score);
+            if let Some(writer) = day_writer.as_mut() {
+                if write_err.is_none() {
+                    let rec = ImpressionClickRef {
+                        day,
+                        user_id: impression.user_id.as_str(),
+                        organic_item_id: "",
+                        organic_category_id: "",
+                        campaign_id: impression.ad.campaign_id.as_str(),
+                        advertiser_id: impression.ad.advertiser_id.as_str(),
+                        ad_item_id: impression.ad.ad_item_id.as_str(),
+                        ad_category_id: impression.ad.category_id.as_str(),
+                        ad_price_cents: item.price_cents,
+                        cpc_cents: impression.ad.cpc_cents,
+                        clicked,
+                    };
+                    if let Err(err) = writer.write_ref(&rec) {
+                        write_err = Some(err);
+                    }
+                }
+            }
+            clicked
         })?;
+
+        if let Some(err) = write_err {
+            return Err(err);
+        }
+        if let Some(writer) = day_writer {
+            writer.finish()?;
+        }
+
+        if use_ml_scoring && day < DAYS {
+            if let (Some(store), Some(pt)) = (log_store.as_ref(), trainer.as_mut()) {
+                let model_out = store.model_file_path(day);
+                let model =
+                    pt.train_from_log_store(store, day, &model_out, TrainingConfig::default())?;
+                let user_refs: Vec<&str> = user_ids.iter().map(String::as_str).collect();
+                let cat_refs: [&str; 1] = [""];
+                let candidates: Vec<AdCandidate<'_>> = ad_server
+                    .campaigns()
+                    .iter()
+                    .map(|c| AdCandidate {
+                        campaign_id: c.id.as_str(),
+                        advertiser_id: c.advertiser_id.as_str(),
+                        ad_item_id: c.ad_item_id.as_str(),
+                        ad_category_id: c.category_id.as_str(),
+                        ad_price_cents: c.item.price_cents,
+                    })
+                    .collect();
+                let scorer = model.prepare_scorer(&user_refs, &cat_refs, &candidates);
+                ad_server.set_ml_scorer(Some(scorer));
+            }
+        }
 
         let daily = Day {
             day,
@@ -504,7 +623,10 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
 mod tests {
     use std::collections::{HashMap, HashSet};
 
-    use ad_server::{PacingStrategy, R1_SLATE_SIZE, RankerStrategy, ScoringStrategy};
+    use ad_server::{
+        BiddingStrategy, PacingStrategy, R1_SLATE_SIZE, RankerStrategy, RetrievalStrategy,
+        ScoringStrategy,
+    };
     use ads_simulator::generate_marketplace;
 
     use super::{
@@ -604,9 +726,11 @@ mod tests {
             campaign_budget_max_cents: DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
             cpc_cents: 100,
             impressions: Some(1_000_000),
+            retrieval: RetrievalStrategy::RetrieveV0,
             ranker: RankerStrategy::R1,
             scoring: ScoringStrategy::S0,
             pacing: PacingStrategy::P0,
+            bidding: BiddingStrategy::Basebid,
             slate_size: R1_SLATE_SIZE,
         };
         let report = run(&marketplace, config).unwrap();
@@ -678,6 +802,33 @@ mod tests {
     }
 
     #[test]
+    fn pacing_1_and_autobid_v0_run_end_to_end_and_balance_ledgers() {
+        let marketplace = generate_marketplace(42);
+        let config = Config {
+            seed: 42,
+            campaign_budget_cents: Some(30_000),
+            cpc_cents: 100,
+            impressions: Some(60_000),
+            retrieval: RetrievalStrategy::RetrieveV0,
+            ranker: RankerStrategy::R2,
+            scoring: ScoringStrategy::S1,
+            pacing: PacingStrategy::Pacing1,
+            bidding: BiddingStrategy::AutobidV0,
+            slate_size: R1_SLATE_SIZE,
+            ..Config::default()
+        };
+        let report = run(&marketplace, config).unwrap();
+        assert_eq!(report.summary.activity.impressions, 60_000);
+        assert_eq!(report.strategy.retrieval, RetrievalStrategy::RetrieveV0);
+        assert_eq!(report.strategy.pacing, PacingStrategy::Pacing1);
+        assert_eq!(report.strategy.bidding, BiddingStrategy::AutobidV0);
+        assert_eq!(
+            report.summary.remaining_budget_cents + report.summary.activity.spend_cents,
+            report.summary.budget_cents
+        );
+    }
+
+    #[test]
     fn unaffordable_campaigns_leave_budgets_intact_and_cannot_meet_a_target() {
         let marketplace = generate_marketplace(42);
         let mut config = Config {
@@ -719,9 +870,11 @@ mod tests {
                 campaign_budget_max_cents: DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
                 cpc_cents: DEFAULT_CPC_CENTS,
                 impressions: None,
+                retrieval: RetrievalStrategy::RetrieveV0,
                 ranker: RankerStrategy::R1,
                 scoring: ScoringStrategy::S0,
                 pacing: PacingStrategy::P0,
+                bidding: BiddingStrategy::Basebid,
                 slate_size: R1_SLATE_SIZE,
             }
         );

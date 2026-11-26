@@ -129,6 +129,12 @@
           <input id="runner-impressions" name="impressions" type="number" step="1" min="0" value="1000000">
         </div>
         <div class="runner-field">
+          <label for="runner-retrieval">Retrieval Strategy</label>
+          <select id="runner-retrieval" name="retrieval">
+            <option value="Retrieve-V0" selected>Retrieve-V0 · Active Funded Pool</option>
+          </select>
+        </div>
+        <div class="runner-field">
           <label for="runner-ranker">Ranking Strategy</label>
           <select id="runner-ranker" name="ranker">
             <option value="R1" selected>R1 · Random Budgeted</option>
@@ -143,6 +149,7 @@
             <option value="S1">S1 · Online UCB1 CTR</option>
             <option value="S2">S2 · Empirical CTR</option>
             <option value="S3">S3 · Empirical eCPM</option>
+            <option value="Score-R1">Score-R1 · PyTorch L2 LR CTR (ads-ml)</option>
           </select>
         </div>
         <div class="runner-field">
@@ -151,6 +158,14 @@
             <option value="P0" selected>P0 · Unpaced (ASAP Hard Cap)</option>
             <option value="P1">P1 · Even Daily Cap (30d)</option>
             <option value="P2">P2 · Smooth Probabilistic</option>
+            <option value="pacing-1">pacing-1 · 24h PST Linear Intraday</option>
+          </select>
+        </div>
+        <div class="runner-field">
+          <label for="runner-bidding">Bidding Strategy</label>
+          <select id="runner-bidding" name="bidding">
+            <option value="bidding-basebid" selected>bidding-basebid · Flat Base Bid</option>
+            <option value="bidding-autobid-v0">bidding-autobid-v0 · eCPM Auto-Bid</option>
           </select>
         </div>
         <div class="runner-field">

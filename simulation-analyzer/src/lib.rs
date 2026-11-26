@@ -10,7 +10,10 @@ use std::fs::File;
 use std::io::{BufReader, Error, ErrorKind};
 use std::path::Path;
 
-use ad_server::{PacingStrategy, RankerStrategy, ScoringStrategy, StrategyProfile};
+use ad_server::{
+    BiddingStrategy, PacingStrategy, RankerStrategy, RetrievalStrategy, ScoringStrategy,
+    StrategyProfile,
+};
 use ads_marketplace_simulation::{DAYS, MAX_CLICK_PROBABILITY, OwnedReport, Report, SCHEMA_VERSION};
 use serde::{Deserialize, Serialize};
 
@@ -192,11 +195,15 @@ pub struct AnalysisFinding {
 pub struct SimulationAnalysis {
     pub schema_version: u32,
     pub currency: String,
+    #[serde(default)]
+    pub retrieval: RetrievalStrategy,
     pub ranker: RankerStrategy,
     #[serde(default)]
     pub scoring: ScoringStrategy,
     #[serde(default)]
     pub pacing: PacingStrategy,
+    #[serde(default)]
+    pub bidding: BiddingStrategy,
     #[serde(default)]
     pub strategy: StrategyProfile,
     pub slate_size: usize,
@@ -655,9 +662,11 @@ pub fn analyze_report(report: &OwnedReport) -> Result<SimulationAnalysis, Error>
     top_advertisers_by_spend.truncate(10);
 
     let strategy = StrategyProfile::new(
+        report.config.retrieval,
         report.config.ranker,
         report.config.scoring,
         report.config.pacing,
+        report.config.bidding,
         report.config.slate_size,
     );
     let findings = synthesize_findings(
@@ -670,9 +679,11 @@ pub fn analyze_report(report: &OwnedReport) -> Result<SimulationAnalysis, Error>
     Ok(SimulationAnalysis {
         schema_version: report.schema_version,
         currency: report.currency.clone(),
+        retrieval: report.config.retrieval,
         ranker: report.config.ranker,
         scoring: report.config.scoring,
         pacing: report.config.pacing,
+        bidding: report.config.bidding,
         strategy,
         slate_size: report.config.slate_size,
         seed: report.config.seed,
@@ -698,9 +709,11 @@ fn synthesize_findings(
     dist: &CampaignDistributionAnalysis,
 ) -> Vec<AnalysisFinding> {
     let mut findings = Vec::new();
+    let retrieval = strategy.retrieval;
     let ranker = strategy.ranking;
     let scoring = strategy.scoring;
     let pacing = strategy.pacing;
+    let bidding = strategy.bidding;
     let slate_size = strategy.slate_size;
 
     if dep.total_spend_cents == 0 {
@@ -754,7 +767,7 @@ fn synthesize_findings(
             category: "budget_depletion".into(),
             title: format!("Low 30-day budget utilization ({:.2}%)", dep.utilization_pct),
             detail: format!(
-                "Spent {} of {}{proj} under {ranker}/{scoring}/{pacing}. Consider targeted ranking/scoring beyond {ranker}/{scoring} to lift CTR and budget delivery.",
+                "Spent {} of {}{proj} under {retrieval}/{ranker}/{scoring}/{pacing}/{bidding}. Consider targeted ranking/scoring beyond {ranker}/{scoring} to lift CTR and budget delivery.",
                 format_usd(dep.total_spend_cents),
                 format_usd(dep.total_budget_cents),
             ),
@@ -789,7 +802,7 @@ fn synthesize_findings(
                 format_usd(ctr.effective_cpm_cents.round() as u64)
             ),
             detail: format!(
-                "Ranker {ranker} · Scoring {scoring} · Pacing {pacing} (slate {slate_size}) delivered {:.2} ads/request across {} requests. Theoretical targeted ceiling is {:.2}% ({:.1}x current CTR).",
+                "Retrieval {retrieval} · Ranker {ranker} · Scoring {scoring} · Pacing {pacing} · Bidding {bidding} (slate {slate_size}) delivered {:.2} ads/request across {} requests. Theoretical targeted ceiling is {:.2}% ({:.1}x current CTR).",
                 ctr.avg_ads_per_request,
                 ctr.total_ad_requests,
                 ctr.theoretical_max_ctr_pct,
@@ -859,10 +872,12 @@ pub fn render_text_summary(analysis: &SimulationAnalysis) -> String {
     let mut out = String::new();
     let _ = writeln!(
         out,
-        "Simulation Analysis (Ranker {} · Scoring {} · Pacing {} · Slate {} · Seed {} · {} days)",
+        "Simulation Analysis (Retrieval {} · Ranker {} · Scoring {} · Pacing {} · Bidding {} · Slate {} · Seed {} · {} days)",
+        analysis.retrieval,
         analysis.ranker,
         analysis.scoring,
         analysis.pacing,
+        analysis.bidding,
         analysis.slate_size,
         analysis.seed,
         analysis.days_analyzed

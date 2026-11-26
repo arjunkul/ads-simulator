@@ -6,6 +6,7 @@ rust-version = "1.88"
 
 [dependencies]
 ad-server = { path = "../ad-server" }
+ads-ml = { path = "../ml" }
 ads-simulator = { path = ".." }
 clap = { version = "4.5", features = ["derive"] }
 impression-generator = { path = "../impression-generator" }

@@ -24,7 +24,8 @@ export const tests = [
       const badFiles = files.filter(
         (f) =>
           /\.(pyc|pyo|pyd)$/i.test(f) ||
-          /(^|\/)(requirements\.txt|pyproject\.toml|setup\.py|setup\.cfg|Pipfile)$/i.test(f),
+          (/(^|\/)(requirements\.txt|pyproject\.toml|setup\.py|setup\.cfg|Pipfile)$/i.test(f) &&
+            f !== "ml/pytorch/requirements.txt"),
       );
       assert.deepStrictEqual(badFiles, [], `Unexpected Python artifacts found: ${badFiles.join(", ")}`);
 
@@ -73,6 +74,7 @@ export const tests = [
       assert.ok(rootHasWorkspaceMsrv, 'Root Cargo.toml must declare rust-version = "1.88"');
 
       for (const member of [
+        "ml",
         "ad-server",
         "impression-generator",
         "simulation",

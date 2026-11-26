@@ -1,6 +1,7 @@
 [workspace]
 members = [
     ".",
+    "ml",
     "ad-server",
     "impression-generator",
     "simulation",

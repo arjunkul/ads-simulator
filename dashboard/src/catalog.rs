@@ -335,28 +335,41 @@ pub fn build_catalog() -> SimulatorCatalog {
         },
         SimulatorPiece {
             id: "ads-ranker-r1".into(),
-            name: "Ads-Ranker, Scoring & Pacing Strategies".into(),
+            name: "Ad-Serving Strategy Stack (Retrieval · Pacing · Bidding · Scoring · Ranking)".into(),
             crate_name: "ad-server".into(),
             stage: "Ad Serving & Simulation".into(),
-            source_files: vec!["ad-server/src/ranker.rs".into(), "ad-server/src/strategy.rs".into()],
-            summary: "Explicit 3-axis ad-serving strategy pipeline combining Budget Pacing (P0/P1/P2), Candidate Scoring (S0/S1/S2/S3), and Slate Ranking (R1/R2/R3) on every simulation run.".into(),
+            source_files: vec![
+                "ad-server/src/retrieval.rs".into(),
+                "ad-server/src/bidding.rs".into(),
+                "ad-server/src/timestamp.rs".into(),
+                "ad-server/src/ranker.rs".into(),
+                "ad-server/src/strategy.rs".into(),
+                "ml/src/lib.rs".into(),
+                "ml/src/model.rs".into(),
+            ],
+            summary: "Explicit 5-axis ad-serving strategy pipeline combining Candidate Retrieval (Retrieve-V0), Budget Pacing (P0/P1/P2/pacing-1), Auction Bidding (bidding-basebid/bidding-autobid-v0), Candidate Scoring (S0–S3 + Score-R1 PyTorch LR), and Slate Ranking (R1/R2/R3) on every simulation run.".into(),
             parameters: vec![
+                param("default_retrieval", "Default Retrieval Strategy", srv.default_retrieval.as_str(), "strategy"),
                 param("default_ranker", "Default Ranking Strategy", srv.default_ranker.as_str(), "strategy"),
                 param("default_scoring", "Default Scoring Strategy", srv.default_scoring.as_str(), "strategy"),
                 param("default_pacing", "Default Pacing Strategy", srv.default_pacing.as_str(), "strategy"),
+                param("default_bidding", "Default Bidding Strategy", srv.default_bidding.as_str(), "strategy"),
                 param("default_slate_size", "Default Slate Size", srv.default_slate_size, "ads / request"),
+                param("supported_retrievers", "Registered Retrievers", srv.supported_retrievers.iter().map(|r| r.id.as_str()).collect::<Vec<_>>().join(", "), "strategies"),
                 param("supported_rankers", "Registered Rankers", srv.supported_rankers.iter().map(|r| r.id.as_str()).collect::<Vec<_>>().join(", "), "strategies"),
                 param("supported_scorers", "Registered Scorers", srv.supported_scorers.iter().map(|s| s.id.as_str()).collect::<Vec<_>>().join(", "), "strategies"),
                 param("supported_pacers", "Registered Pacers", srv.supported_pacers.iter().map(|p| p.id.as_str()).collect::<Vec<_>>().join(", "), "strategies"),
+                param("supported_bidders", "Registered Bidders", srv.supported_bidders.iter().map(|b| b.id.as_str()).collect::<Vec<_>>().join(", "), "strategies"),
             ],
             features: vec![
-                feat("Explicit 3-Axis Strategy Manifest", "Every run resolves and records concrete Ranking, Scoring, and Pacing strategies across reports, analysis, SVGs, and dashboards."),
-                feat("Pluggable Candidate Scoring (S0–S3)", "Supports Uniform (S0), Online UCB1 CTR (S1), Empirical CTR (S2), and Empirical eCPM (S3) scoring."),
-                feat("Budget Pacing Engines (P0–P2)", "Supports Unpaced ASAP (P0), Even Daily Cap with carryover (P1), and Smooth Probabilistic Pacing (P2)."),
-                feat("Slate Selection Strategies (R1–R3)", "Supports Random Budgeted (R1), Bandit Top-K + 10% ε-greedy (R2), and Greedy Top-K (R3)."),
+                feat("Explicit 5-Axis Strategy Manifest", "Every run resolves and records concrete Retrieval, Ranking, Scoring, Pacing, and Bidding strategies across reports, analysis, SVGs, and dashboards."),
+                feat("O(1) Active-Budget Retrieval (Retrieve-V0)", "ActiveBudgetRetriever sparse-set index returns all funded campaigns in O(active) with O(1) swap-remove retirement."),
+                feat("Pluggable Candidate Scoring (S0–S3 + Score-R1)", "Supports Uniform (S0), Online UCB1 CTR (S1), Empirical CTR (S2), Empirical eCPM (S3), and daily PyTorch L2 logistic regression CTR (Score-R1 via ads-ml)."),
+                feat("Budget Pacing Engines (P0–P2 + pacing-1)", "Supports Unpaced ASAP (P0), Even Daily Cap (P1), Smooth Probabilistic (P2), and 24-hour PST linear intraday budget schedule (pacing-1)."),
+                feat("Auction Bidding & Slate Ranking (B0–B1 × R1–R3)", "Supports Base Bid (bidding-basebid) and eCPM Auto-Bid (bidding-autobid-v0) combined with Random (R1), Bandit ε-greedy (R2), and Greedy Top-K (R3)."),
             ],
             gaps_and_simplifications: vec![
-                "Current scoring strategies (S0–S3) are user-blind campaign-level signals; user-contextual pCTR scoring is planned for future iterations.".into(),
+                "Retrieve-V0 scans all active funded campaigns without ANN/inverted-index pre-filtering; Score-R1 requires Python PyTorch runtime for daily cold retraining.".into(),
             ],
         },
         SimulatorPiece {
@@ -510,7 +523,7 @@ pub fn build_catalog() -> SimulatorCatalog {
             total_features,
             implemented_features,
             gaps_and_simplifications,
-            crates: 7,
+            crates: 8,
             categories: mp.category_count,
             advertisers: mp.advertiser_count,
             users: mp.user_count,
@@ -641,7 +654,7 @@ mod tests {
         assert_eq!(catalog.currency, "USD");
         assert_eq!(catalog.pieces.len(), 11);
         assert_eq!(catalog.summary_counts.pieces, 11);
-        assert_eq!(catalog.summary_counts.crates, 7);
+        assert_eq!(catalog.summary_counts.crates, 8);
         assert_eq!(catalog.summary_counts.r1_slate_size, 20);
         assert!(catalog.pipeline_edges.len() >= 10);
         assert!(catalog.summary_counts.gaps_and_simplifications >= 3);

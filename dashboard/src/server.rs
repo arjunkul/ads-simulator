@@ -10,8 +10,9 @@ use std::thread;
 use std::time::Duration;
 
 use ad_server::{
-    AdResponse, AdServer, AdServerConfig, DEFAULT_PACING, PacingStrategy, R1_SLATE_SIZE,
-    RankerStrategy, ScoringStrategy,
+    AdResponse, AdServer, AdServerConfig, BiddingStrategy, DEFAULT_BIDDING, DEFAULT_PACING,
+    DEFAULT_RETRIEVAL, PacingStrategy, R1_SLATE_SIZE, RankerStrategy, RetrievalStrategy,
+    ScoringStrategy,
 };
 use ads_simulator::{DEFAULT_SEED as DEFAULT_MARKETPLACE_SEED, generate_marketplace};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -66,9 +67,11 @@ fn sample_ad_server(
     seed: u64,
     campaign_budget_cents: Option<u64>,
     cpc_cents: u64,
+    retrieval: RetrievalStrategy,
     ranker: RankerStrategy,
     scoring: ScoringStrategy,
     pacing: PacingStrategy,
+    bidding: BiddingStrategy,
     slate_size: usize,
 ) -> Result<AdResponse, String> {
     if user_id.trim().is_empty() {
@@ -83,9 +86,11 @@ fn sample_ad_server(
             campaign_budget_min_cents: DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS,
             campaign_budget_max_cents: DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
             cpc_cents,
+            retrieval,
             ranker,
             scoring,
             pacing,
+            bidding,
             slate_size,
         },
     )
@@ -139,9 +144,11 @@ impl DashboardState {
             DEFAULT_SIM_SEED,
             None,
             DEFAULT_CPC_CENTS,
+            DEFAULT_RETRIEVAL,
             RankerStrategy::R1,
             RankerStrategy::R1.default_scoring(),
             DEFAULT_PACING,
+            DEFAULT_BIDDING,
             R1_SLATE_SIZE,
         )
         .map_err(io::Error::other)?;
@@ -452,11 +459,15 @@ struct SimRunRequest {
     #[serde(default, deserialize_with = "deserialize_optional_nullable_u64")]
     impressions: Option<Option<u64>>,
     #[serde(default)]
+    retrieval: Option<RetrievalStrategy>,
+    #[serde(default)]
     ranker: Option<RankerStrategy>,
     #[serde(default)]
     scoring: Option<ScoringStrategy>,
     #[serde(default)]
     pacing: Option<PacingStrategy>,
+    #[serde(default)]
+    bidding: Option<BiddingStrategy>,
     #[serde(default)]
     slate_size: Option<usize>,
 }
@@ -592,9 +603,11 @@ fn handle_ad_server_sample(
     let mut seed = DEFAULT_SIM_SEED;
     let mut budget: Option<u64> = None;
     let mut cpc = DEFAULT_CPC_CENTS;
+    let mut retrieval = DEFAULT_RETRIEVAL;
     let mut ranker = RankerStrategy::R1;
     let mut scoring: Option<ScoringStrategy> = None;
     let mut pacing = DEFAULT_PACING;
+    let mut bidding = DEFAULT_BIDDING;
     let mut slate_size = R1_SLATE_SIZE;
 
     for (k, v) in pairs {
@@ -614,6 +627,10 @@ fn handle_ad_server_sample(
                 Ok(n) => cpc = n,
                 Err(_) => return HttpResponse::error(400, "Bad Request", "invalid cpc parameter"),
             },
+            "retrieval" => match v.parse::<RetrievalStrategy>() {
+                Ok(r) => retrieval = r,
+                Err(msg) => return HttpResponse::error(400, "Bad Request", &msg),
+            },
             "ranker" => match v.parse::<RankerStrategy>() {
                 Ok(r) => ranker = r,
                 Err(msg) => return HttpResponse::error(400, "Bad Request", &msg),
@@ -624,6 +641,10 @@ fn handle_ad_server_sample(
             },
             "pacing" => match v.parse::<PacingStrategy>() {
                 Ok(p) => pacing = p,
+                Err(msg) => return HttpResponse::error(400, "Bad Request", &msg),
+            },
+            "bidding" => match v.parse::<BiddingStrategy>() {
+                Ok(b) => bidding = b,
                 Err(msg) => return HttpResponse::error(400, "Bad Request", &msg),
             },
             "slate_size" => match v.parse::<usize>() {
@@ -643,9 +664,11 @@ fn handle_ad_server_sample(
         seed,
         budget,
         cpc,
+        retrieval,
         ranker,
         resolved_scoring,
         pacing,
+        bidding,
         slate_size,
     ) {
         Ok(resp) => HttpResponse::json_value(200, "OK", &resp),
@@ -681,9 +704,11 @@ fn handle_sim_run(body: &[u8], state: &Arc<RwLock<DashboardState>>) -> HttpRespo
         None => Some(DEFAULT_IMPRESSIONS),
         Some(explicit) => explicit,
     };
+    let retrieval = parsed.retrieval.unwrap_or(DEFAULT_RETRIEVAL);
     let ranker = parsed.ranker.unwrap_or(DEFAULT_RANKER);
     let scoring = parsed.scoring.unwrap_or_else(|| ranker.default_scoring());
     let pacing = parsed.pacing.unwrap_or(DEFAULT_PACING);
+    let bidding = parsed.bidding.unwrap_or(DEFAULT_BIDDING);
     let slate_size = parsed.slate_size.unwrap_or(DEFAULT_SLATE_SIZE);
 
     let config = AgentConfig {
@@ -695,9 +720,11 @@ fn handle_sim_run(body: &[u8], state: &Arc<RwLock<DashboardState>>) -> HttpRespo
         campaign_budget_max_cents,
         cpc_cents,
         impressions,
+        retrieval,
         ranker,
         scoring,
         pacing,
+        bidding,
         slate_size,
     };
 

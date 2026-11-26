@@ -6,6 +6,7 @@ version = 4
 name = "ad-server"
 version = "0.1.0"
 dependencies = [
+ "ads-ml",
  "ads-simulator",
  "rand",
  "rand_chacha",
@@ -18,11 +19,21 @@ name = "ads-marketplace-simulation"
 version = "0.1.0"
 dependencies = [
  "ad-server",
+ "ads-ml",
  "ads-simulator",
  "clap",
  "impression-generator",
  "rand",
  "rand_chacha",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "ads-ml"
+version = "0.1.0"
+dependencies = [
  "serde",
  "serde_json",
  "tempfile",

@@ -8,7 +8,8 @@ use std::io::{self, BufReader, BufWriter, Write as _};
 use std::path::{Path, PathBuf};
 
 use ad_server::{
-    PacingStrategy, R1_SLATE_SIZE, RankerStrategy, ScoringStrategy, StrategyProfile,
+    BiddingStrategy, PacingStrategy, R1_SLATE_SIZE, RankerStrategy, RetrievalStrategy,
+    ScoringStrategy, StrategyProfile,
 };
 use ads_marketplace_simulation::{Activity, Config, OwnedReport, Report};
 use ads_simulator::{Marketplace, generate_marketplace};
@@ -36,12 +37,16 @@ pub const DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS: u64 =
 pub const DEFAULT_CPC_CENTS: u64 = ads_marketplace_simulation::DEFAULT_CPC_CENTS;
 /// Default delivered-impression target across 30 days (`1_000_000`).
 pub const DEFAULT_IMPRESSIONS: u64 = 1_000_000;
+/// Default candidate retrieval strategy (`Retrieve-V0`).
+pub const DEFAULT_RETRIEVAL: RetrievalStrategy = ads_marketplace_simulation::DEFAULT_RETRIEVAL;
 /// Default ads-ranker strategy (`R1`).
 pub const DEFAULT_RANKER: RankerStrategy = ads_marketplace_simulation::DEFAULT_RANKER;
 /// Default candidate scoring strategy (`S0` = Uniform).
 pub const DEFAULT_SCORING: ScoringStrategy = ads_marketplace_simulation::DEFAULT_SCORING;
 /// Default budget pacing strategy (`P0` = Unpaced ASAP).
 pub const DEFAULT_PACING: PacingStrategy = ads_marketplace_simulation::DEFAULT_PACING;
+/// Default auction bidding strategy (`bidding-basebid`).
+pub const DEFAULT_BIDDING: BiddingStrategy = ads_marketplace_simulation::DEFAULT_BIDDING;
 /// Default ad-server slate size (`20` distinct funded campaigns per request).
 pub const DEFAULT_SLATE_SIZE: usize = R1_SLATE_SIZE;
 /// Default artifact output directory (`"output/sim-agent"`).
@@ -94,6 +99,9 @@ pub struct AgentConfig {
     /// Target delivered impressions across 30 days (`Some(1_000_000)` by default;
     /// `None` runs natural 600 requests/day user-independent mode).
     pub impressions: Option<u64>,
+    /// Candidate retrieval strategy used by the ad-server (default: `Retrieve-V0`).
+    #[serde(default)]
+    pub retrieval: RetrievalStrategy,
     /// Ads-ranker strategy used by the ad-server (default: `R1`).
     #[serde(default)]
     pub ranker: RankerStrategy,
@@ -103,6 +111,9 @@ pub struct AgentConfig {
     /// Budget pacing strategy used by the ad-server (default: `P0`).
     #[serde(default)]
     pub pacing: PacingStrategy,
+    /// Auction bidding strategy used by the ad-server (default: `bidding-basebid`).
+    #[serde(default)]
+    pub bidding: BiddingStrategy,
     /// Maximum distinct funded campaigns served per ad-server request (default: `20`).
     #[serde(default = "default_slate_size")]
     pub slate_size: usize,
@@ -119,9 +130,11 @@ impl Default for AgentConfig {
             campaign_budget_max_cents: DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
             cpc_cents: DEFAULT_CPC_CENTS,
             impressions: Some(DEFAULT_IMPRESSIONS),
+            retrieval: DEFAULT_RETRIEVAL,
             ranker: DEFAULT_RANKER,
             scoring: DEFAULT_SCORING,
             pacing: DEFAULT_PACING,
+            bidding: DEFAULT_BIDDING,
             slate_size: DEFAULT_SLATE_SIZE,
         }
     }
@@ -137,9 +150,11 @@ impl AgentConfig {
             campaign_budget_max_cents: self.campaign_budget_max_cents,
             cpc_cents: self.cpc_cents,
             impressions: self.impressions,
+            retrieval: self.retrieval,
             ranker: self.ranker,
             scoring: self.scoring,
             pacing: self.pacing,
+            bidding: self.bidding,
             slate_size: self.slate_size,
         }
     }
@@ -162,11 +177,15 @@ pub struct TimeSeriesConfig {
     pub cpc_cents: u64,
     pub impressions: Option<u64>,
     #[serde(default)]
+    pub retrieval: RetrievalStrategy,
+    #[serde(default)]
     pub ranker: RankerStrategy,
     #[serde(default)]
     pub scoring: ScoringStrategy,
     #[serde(default)]
     pub pacing: PacingStrategy,
+    #[serde(default)]
+    pub bidding: BiddingStrategy,
     #[serde(default = "default_slate_size")]
     pub slate_size: usize,
 }
@@ -861,9 +880,11 @@ pub fn timeseries_from_owned_report(
     };
 
     let strategy = StrategyProfile::new(
+        report.config.retrieval,
         report.config.ranker,
         report.config.scoring,
         report.config.pacing,
+        report.config.bidding,
         report.config.slate_size,
     );
 
@@ -878,9 +899,11 @@ pub fn timeseries_from_owned_report(
             campaign_budget_max_cents: report.config.campaign_budget_max_cents,
             cpc_cents: report.config.cpc_cents,
             impressions: report.config.impressions,
+            retrieval: report.config.retrieval,
             ranker: report.config.ranker,
             scoring: report.config.scoring,
             pacing: report.config.pacing,
+            bidding: report.config.bidding,
             slate_size: report.config.slate_size,
         },
         strategy,

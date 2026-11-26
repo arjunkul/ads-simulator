@@ -4,25 +4,41 @@
 //! funded campaigns selected by a pluggable [`AdsRanker`] strategy (starting with
 //! [`RankerStrategy::R1`], which selects up to 20 random campaigns with remaining budget).
 
+pub mod bidding;
 pub mod ranker;
+pub mod retrieval;
 pub mod strategy;
+pub mod timestamp;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::{Error, ErrorKind};
 
+use ads_ml::PreparedScorer;
 use ads_simulator::{Item, Marketplace};
 use rand::seq::IndexedRandom;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 
+pub use bidding::{
+    AuctionWinner, Bid, BiddingStrategy, DEFAULT_BIDDING, compute_bid, run_first_price_auction,
+};
 pub use ranker::{
     AdsRanker, R1_SLATE_SIZE, R1RandomBudgetedRanker, R2_EPSILON, R2_SLATE_SIZE,
     R2_UCB_EXPLORATION_C, R2OnlineCtrRanker, R3_SLATE_SIZE, R3GreedyTopKRanker, RankerStrategy,
+    ServingContext,
+};
+pub use retrieval::{
+    ActiveBudgetRetriever, CampaignRetriever, DEFAULT_RETRIEVAL, RetrievalRequest,
+    RetrievalStrategy, build_retriever,
 };
 pub use strategy::{
     DEFAULT_PACING, DEFAULT_SCORING, PacingStrategy, ScoringStrategy, StrategyInfo,
-    StrategyProfile, validate_strategy,
+    StrategyProfile, daily_budget_cents, pacing_1_unlock_second, validate_strategy,
+};
+pub use timestamp::{
+    HOURS_PER_DAY, PstTimestamp, SECONDS_PER_DAY, SECONDS_PER_HOUR, TIMEZONE_LABEL,
+    sample_pst_second_of_day,
 };
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -47,17 +63,25 @@ pub struct AdServerSpec {
     pub default_min_campaign_budget_cents: u64,
     pub default_max_campaign_budget_cents: u64,
     pub default_cpc_cents: u64,
+    #[serde(default)]
+    pub default_retrieval: RetrievalStrategy,
     pub default_ranker: RankerStrategy,
     #[serde(default)]
     pub default_scoring: ScoringStrategy,
     #[serde(default)]
     pub default_pacing: PacingStrategy,
+    #[serde(default)]
+    pub default_bidding: BiddingStrategy,
     pub default_slate_size: usize,
+    #[serde(default)]
+    pub supported_retrievers: Vec<StrategyInfo>,
     pub supported_rankers: Vec<RankerInfo>,
     #[serde(default)]
     pub supported_scorers: Vec<StrategyInfo>,
     #[serde(default)]
     pub supported_pacers: Vec<StrategyInfo>,
+    #[serde(default)]
+    pub supported_bidders: Vec<StrategyInfo>,
 }
 
 /// Metadata describing a registered ranker strategy.
@@ -86,10 +110,21 @@ pub fn ad_server_spec() -> AdServerSpec {
         default_min_campaign_budget_cents: DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS,
         default_max_campaign_budget_cents: DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
         default_cpc_cents: DEFAULT_CPC_CENTS,
+        default_retrieval: DEFAULT_RETRIEVAL,
         default_ranker: RankerStrategy::R1,
         default_scoring: DEFAULT_SCORING,
         default_pacing: DEFAULT_PACING,
+        default_bidding: DEFAULT_BIDDING,
         default_slate_size: R1_SLATE_SIZE,
+        supported_retrievers: RetrievalStrategy::all()
+            .iter()
+            .map(|&ret| StrategyInfo {
+                id: ret.as_str().to_owned(),
+                name: ret.name().to_owned(),
+                description: ret.description().to_owned(),
+                formula: ret.formula().to_owned(),
+            })
+            .collect(),
         supported_rankers: RankerStrategy::all()
             .iter()
             .map(|&strategy| RankerInfo {
@@ -119,6 +154,15 @@ pub fn ad_server_spec() -> AdServerSpec {
                 formula: pacing.formula().to_owned(),
             })
             .collect(),
+        supported_bidders: BiddingStrategy::all()
+            .iter()
+            .map(|&bidding| StrategyInfo {
+                id: bidding.as_str().to_owned(),
+                name: bidding.name().to_owned(),
+                description: bidding.description().to_owned(),
+                formula: bidding.formula().to_owned(),
+            })
+            .collect(),
     }
 }
 
@@ -136,11 +180,15 @@ pub struct AdServerConfig {
     pub campaign_budget_max_cents: u64,
     pub cpc_cents: u64,
     #[serde(default)]
+    pub retrieval: RetrievalStrategy,
+    #[serde(default)]
     pub ranker: RankerStrategy,
     #[serde(default)]
     pub scoring: ScoringStrategy,
     #[serde(default)]
     pub pacing: PacingStrategy,
+    #[serde(default)]
+    pub bidding: BiddingStrategy,
     #[serde(default = "default_slate_size")]
     pub slate_size: usize,
 }
@@ -169,9 +217,16 @@ impl AdServerConfig {
         }
     }
 
-    /// Return the explicit 3-axis [`StrategyProfile`] represented by this config.
+    /// Return the explicit 5-axis [`StrategyProfile`] represented by this config.
     pub fn strategy_profile(&self) -> StrategyProfile {
-        StrategyProfile::new(self.ranker, self.scoring, self.pacing, self.slate_size)
+        StrategyProfile::new(
+            self.retrieval,
+            self.ranker,
+            self.scoring,
+            self.pacing,
+            self.bidding,
+            self.slate_size,
+        )
     }
 }
 
@@ -183,9 +238,11 @@ impl Default for AdServerConfig {
             campaign_budget_min_cents: DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS,
             campaign_budget_max_cents: DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
             cpc_cents: DEFAULT_CPC_CENTS,
+            retrieval: DEFAULT_RETRIEVAL,
             ranker: RankerStrategy::R1,
             scoring: DEFAULT_SCORING,
             pacing: DEFAULT_PACING,
+            bidding: DEFAULT_BIDDING,
             slate_size: R1_SLATE_SIZE,
         }
     }
@@ -256,23 +313,30 @@ pub struct ServedAd {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AdResponse {
     pub user_id: String,
+    #[serde(default)]
+    pub retrieval: RetrievalStrategy,
     pub strategy: RankerStrategy,
     #[serde(default)]
     pub scoring: ScoringStrategy,
     #[serde(default)]
     pub pacing: PacingStrategy,
+    #[serde(default)]
+    pub bidding: BiddingStrategy,
     pub ads: Vec<ServedAd>,
 }
 
-/// Stateful ad-server owning campaign budgets, the O(1) active funded pool, and explicit
-/// ranking, scoring, and pacing strategies.
+/// Stateful ad-server owning campaign budgets, an O(1) [`CampaignRetriever`] index (`Retrieve-V0`),
+/// optional `ads-ml` [`PreparedScorer`] (`Score-R1`), and explicit 5-axis serving strategies
+/// (`Retrieval × Pacing × Bidding × Scoring × Ranking`).
 pub struct AdServer {
     config: AdServerConfig,
     campaigns: Vec<CampaignState>,
-    active_indices: Vec<usize>,
-    active_pos: Vec<Option<usize>>,
+    retriever: Box<dyn CampaignRetriever>,
+    user_index_lookup: HashMap<String, usize>,
+    ml_scorer: Option<PreparedScorer>,
     paced_indices: Vec<usize>,
     current_day: usize,
+    current_second_of_day: u32,
     total_budget_cents: u64,
     ranker: Box<dyn AdsRanker>,
     rng: ChaCha8Rng,
@@ -295,7 +359,7 @@ fn sample_campaign_budget(min_cents: u64, max_cents: u64, rng: &mut ChaCha8Rng) 
 
 impl AdServer {
     /// Initialize an [`AdServer`] from a schema v1 marketplace's advertiser catalogs using the
-    /// ranking, scoring, and pacing strategies specified in `config`.
+    /// 5-axis strategy specified in `config`.
     pub fn from_marketplace(
         marketplace: &Marketplace,
         config: AdServerConfig,
@@ -322,7 +386,14 @@ impl AdServer {
         if config.slate_size == 0 || ranker.slate_size() == 0 {
             return Err(invalid("slate_size must be positive"));
         }
-        validate_strategy(config.ranker, config.scoring, config.pacing).map_err(invalid)?;
+        validate_strategy(
+            config.retrieval,
+            config.ranker,
+            config.scoring,
+            config.pacing,
+            config.bidding,
+        )
+        .map_err(invalid)?;
         let (min_budget_cents, max_budget_cents) = config.effective_budget_bounds();
         if min_budget_cents > max_budget_cents {
             return Err(invalid(format!(
@@ -383,24 +454,25 @@ impl AdServer {
             }
         }
 
-        let mut active_indices = Vec::with_capacity(campaigns.len());
-        let mut active_pos = vec![None; campaigns.len()];
-        for (idx, campaign) in campaigns.iter().enumerate() {
-            if campaign.has_budget(config.cpc_cents) {
-                active_pos[idx] = Some(active_indices.len());
-                active_indices.push(idx);
-            }
-        }
-
+        let initial_budgets: Vec<u64> = campaigns.iter().map(|c| c.budget_cents).collect();
+        let retriever = build_retriever(config.retrieval, &initial_budgets, config.cpc_cents);
+        let user_index_lookup: HashMap<String, usize> = marketplace
+            .users
+            .iter()
+            .enumerate()
+            .map(|(idx, u)| (u.id.clone(), idx))
+            .collect();
         let paced_indices = Vec::with_capacity(campaigns.len());
 
         Ok(Self {
             config,
             campaigns,
-            active_indices,
-            active_pos,
+            retriever,
+            user_index_lookup,
+            ml_scorer: None,
             paced_indices,
             current_day: 1,
+            current_second_of_day: 0,
             total_budget_cents,
             ranker,
             rng,
@@ -421,47 +493,89 @@ impl AdServer {
         self.current_day
     }
 
+    /// Set the current PST second-of-day (`0..86_400`) used by intraday pacing (`pacing-1`).
+    pub fn set_second_of_day(&mut self, second_of_day: u32) -> Result<(), Error> {
+        if second_of_day >= SECONDS_PER_DAY {
+            return Err(invalid(format!(
+                "second_of_day {second_of_day} out of range 0..{SECONDS_PER_DAY}"
+            )));
+        }
+        self.current_second_of_day = second_of_day;
+        Ok(())
+    }
+
+    /// Current PST second-of-day (`0..86_400`).
+    pub fn current_second_of_day(&self) -> u32 {
+        self.current_second_of_day
+    }
+
+    /// Install or clear an `ads-ml` [`PreparedScorer`] for `Score-R1` ML CTR scoring.
+    pub fn set_ml_scorer(&mut self, scorer: Option<PreparedScorer>) {
+        self.ml_scorer = scorer;
+    }
+
     /// Convenience helper setting `day` (`1..=30`) before serving ads for `user_id`.
     pub fn serve_ads_for_day(&mut self, day: usize, user_id: &str) -> Result<AdResponse, Error> {
         self.set_day(day)?;
         Ok(self.serve_ads(user_id))
     }
 
-    /// Serve a set of ads from distinct funded, paced-eligible campaigns for `user_id`.
+    /// Serve a set of ads from distinct retrieved, paced, scored, bid, and ranked campaigns for `user_id`.
     ///
     /// Guarantees:
-    /// - Every returned ad belongs to a distinct campaign.
-    /// - Every returned ad's campaign currently has `remaining_budget_cents >= cpc_cents` and
-    ///   passed the configured [`PacingStrategy`] for `current_day()`.
-    /// - Returns at most `slate_size()` ads (20 by default), or fewer if fewer campaigns are
-    ///   currently eligible.
+    /// - Stage 1 (Retrieval): O(1) lookup via [`CampaignRetriever`] (`Retrieve-V0`).
+    /// - Stage 2 (Pacing): Applies [`PacingStrategy`] (`P0`/`P1`/`P2`/`pacing-1`) for `(day, second_of_day)`.
+    /// - Stage 3–5 (Scoring, Bidding, Ranking): Scores & bids candidates and selects up to `slate_size()`
+    ///   distinct funded campaigns.
     pub fn serve_ads(&mut self, user_id: &str) -> AdResponse {
+        let retrieval = self.config.retrieval;
         let strategy = self.ranker.strategy();
         let scoring = self.config.scoring;
         let pacing = self.config.pacing;
-        if self.active_indices.is_empty() {
+        let bidding = self.config.bidding;
+        let user_index = self.user_index_lookup.get(user_id).copied();
+        let req = RetrievalRequest {
+            day: self.current_day,
+            user_id,
+            user_index: user_index.unwrap_or(0),
+            organic_category_id: "",
+            organic_category_index: 0,
+        };
+
+        let retrieved = self.retriever.retrieve(&req);
+        if retrieved.is_empty() {
             return AdResponse {
                 user_id: user_id.to_owned(),
+                retrieval,
                 strategy,
                 scoring,
                 pacing,
+                bidding,
                 ads: Vec::new(),
             };
         }
 
         let max_ads = self.ranker.slate_size();
+        let ctx = ServingContext {
+            user_index,
+            ml_scorer: self.ml_scorer.as_ref(),
+            bidding,
+        };
         let selected = if pacing == PacingStrategy::P0 {
-            self.ranker.select_campaigns(
+            self.ranker.select_campaigns_with_context(
                 user_id,
-                &self.active_indices,
+                retrieved,
                 &self.campaigns,
+                &ctx,
                 &mut self.rng,
             )
         } else {
             pacing.filter_eligible(
                 self.current_day,
                 DAYS,
-                &self.active_indices,
+                self.current_second_of_day,
+                self.config.cpc_cents,
+                retrieved,
                 &self.campaigns,
                 &mut self.rng,
                 &mut self.paced_indices,
@@ -469,16 +583,19 @@ impl AdServer {
             if self.paced_indices.is_empty() {
                 return AdResponse {
                     user_id: user_id.to_owned(),
+                    retrieval,
                     strategy,
                     scoring,
                     pacing,
+                    bidding,
                     ads: Vec::new(),
                 };
             }
-            self.ranker.select_campaigns(
+            self.ranker.select_campaigns_with_context(
                 user_id,
                 &self.paced_indices,
                 &self.campaigns,
+                &ctx,
                 &mut self.rng,
             )
         };
@@ -511,17 +628,19 @@ impl AdServer {
 
         AdResponse {
             user_id: user_id.to_owned(),
+            retrieval,
             strategy,
             scoring,
             pacing,
+            bidding,
             ads,
         }
     }
 
     /// Record a delivered impression (and optional click) against `campaign_index` on `day` (1..=30).
     ///
-    /// When `clicked` is `true`, deducts `cpc_cents` from remaining budget and immediately retires
-    /// the campaign from the active funded pool if it can no longer afford another click.
+    /// When `clicked` is `true`, deducts `cpc_cents` from remaining budget and updates the
+    /// [`CampaignRetriever`] index in O(1) so exhausted campaigns immediately stop being retrieved.
     pub fn record_impression(
         &mut self,
         day: usize,
@@ -550,43 +669,35 @@ impl AdServer {
             None
         };
 
-        let exhausted = campaign.remaining_budget_cents < cpc;
+        let remaining = campaign.remaining_budget_cents;
         campaign.totals.record(cost);
         campaign.daily[day - 1].activity.record(cost);
 
-        if exhausted {
-            self.retire_campaign(campaign_index);
+        if cost.is_some() {
+            self.retriever.on_budget_update(campaign_index, remaining);
         }
 
         Ok(cost)
     }
 
-    fn retire_campaign(&mut self, campaign_index: usize) {
-        if let Some(pos) = self.active_pos[campaign_index].take() {
-            let last_campaign = *self
-                .active_indices
-                .last()
-                .expect("active_pos points into non-empty active_indices");
-            self.active_indices.swap_remove(pos);
-            if pos < self.active_indices.len() {
-                self.active_pos[last_campaign] = Some(pos);
-            }
-        }
-    }
-
     /// True if at least one campaign can currently afford a click.
     pub fn has_funded_campaigns(&self) -> bool {
-        !self.active_indices.is_empty()
+        self.retriever.active_count() > 0
     }
 
     /// Number of campaigns that currently have remaining budget >= CPC.
     pub fn active_campaign_count(&self) -> usize {
-        self.active_indices.len()
+        self.retriever.active_count()
     }
 
     /// Configured CPC in USD cents.
     pub fn cpc_cents(&self) -> u64 {
         self.config.cpc_cents
+    }
+
+    /// Active retrieval strategy.
+    pub fn retrieval(&self) -> RetrievalStrategy {
+        self.config.retrieval
     }
 
     /// Active ranker strategy.
@@ -604,12 +715,19 @@ impl AdServer {
         self.config.pacing
     }
 
-    /// Explicit 3-axis strategy manifest for this server instance.
+    /// Active bidding strategy.
+    pub fn bidding(&self) -> BiddingStrategy {
+        self.config.bidding
+    }
+
+    /// Explicit 5-axis strategy manifest for this server instance.
     pub fn strategy_profile(&self) -> StrategyProfile {
         StrategyProfile::new(
+            self.config.retrieval,
             self.ranker.strategy(),
             self.config.scoring,
             self.config.pacing,
+            self.config.bidding,
             self.ranker.slate_size(),
         )
     }
@@ -914,18 +1032,60 @@ mod tests {
     }
 
     #[test]
+    fn pacing_1_intraday_unlocks_at_pst_second() {
+        let mut mp = generate_marketplace(42);
+        mp.advertisers.truncate(1); // 10 campaigns
+        let mut server = AdServer::from_marketplace(
+            &mp,
+            AdServerConfig {
+                seed: 42,
+                campaign_budget_cents: Some(9_000), // $90 total => $3/day => unlocks at 00:00, 08:00, 16:00 PST
+                cpc_cents: 100,
+                retrieval: crate::RetrievalStrategy::RetrieveV0,
+                ranker: RankerStrategy::R1,
+                scoring: crate::ScoringStrategy::S0,
+                pacing: crate::PacingStrategy::Pacing1,
+                bidding: crate::BiddingStrategy::Basebid,
+                slate_size: 10,
+                ..AdServerConfig::default()
+            },
+        )
+        .unwrap();
+
+        server.set_day(1).unwrap();
+        server.set_second_of_day(0).unwrap();
+        let r0 = server.serve_ads("user-0001");
+        assert_eq!(r0.ads.len(), 10);
+        assert_eq!(r0.retrieval, crate::RetrievalStrategy::RetrieveV0);
+        assert_eq!(r0.pacing, crate::PacingStrategy::Pacing1);
+        for ad in &r0.ads {
+            server.record_impression(1, ad.campaign_index, true).unwrap();
+        }
+        // At 07:59:59 PST (28_799s), all 10 campaigns are still throttled.
+        server.set_second_of_day(28_799).unwrap();
+        assert!(server.serve_ads("user-0001").ads.is_empty());
+        // At 08:00:00 PST (28_800s), all 10 unlock!
+        server.set_second_of_day(28_800).unwrap();
+        assert_eq!(server.serve_ads("user-0001").ads.len(), 10);
+    }
+
+    #[test]
     fn spec_matches_constants_and_round_trips_json() {
         let spec = ad_server_spec();
         assert_eq!(spec.crate_name, "ad-server");
         assert_eq!(spec.default_min_campaign_budget_cents, 100_000);
         assert_eq!(spec.default_max_campaign_budget_cents, 1_000_000);
+        assert_eq!(spec.default_retrieval, crate::RetrievalStrategy::RetrieveV0);
         assert_eq!(spec.default_ranker, RankerStrategy::R1);
         assert_eq!(spec.default_scoring, crate::ScoringStrategy::S0);
         assert_eq!(spec.default_pacing, crate::PacingStrategy::P0);
+        assert_eq!(spec.default_bidding, crate::BiddingStrategy::Basebid);
         assert_eq!(spec.default_slate_size, 20);
+        assert_eq!(spec.supported_retrievers.len(), 1);
         assert_eq!(spec.supported_rankers.len(), 3);
-        assert_eq!(spec.supported_scorers.len(), 4);
-        assert_eq!(spec.supported_pacers.len(), 3);
+        assert_eq!(spec.supported_scorers.len(), 5);
+        assert_eq!(spec.supported_pacers.len(), 4);
+        assert_eq!(spec.supported_bidders.len(), 2);
         let json = serde_json::to_string(&spec).unwrap();
         let parsed: crate::AdServerSpec = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, spec);

@@ -6,15 +6,16 @@ use std::{
 };
 
 use ads_marketplace_simulation::{
-    Config, DEFAULT_CPC_CENTS, DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
-    DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_PACING, DEFAULT_RANKER, DEFAULT_SEED,
-    DEFAULT_SLATE_SIZE, PacingStrategy, RankerStrategy, Report, ScoringStrategy, run,
+    BiddingStrategy, Config, DEFAULT_BIDDING, DEFAULT_CPC_CENTS, DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
+    DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_PACING, DEFAULT_RANKER, DEFAULT_RETRIEVAL,
+    DEFAULT_SEED, DEFAULT_SLATE_SIZE, PacingStrategy, RankerStrategy, Report, RetrievalStrategy,
+    ScoringStrategy, run_with_log_dir,
 };
 use clap::Parser;
 use tempfile::NamedTempFile;
 
 #[derive(Debug, Parser)]
-#[command(about = "Run a seeded 30-day CPC simulation with explicit ranking, scoring, and pacing strategies")]
+#[command(about = "Run a seeded 30-day CPC simulation with explicit 5-axis serving strategies")]
 struct Args {
     /// Schema v1 marketplace.json file.
     #[arg(long)]
@@ -33,24 +34,33 @@ struct Args {
     /// Maximum randomized campaign budget in USD cents (default $10,000.00).
     #[arg(long, default_value_t = DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS)]
     campaign_budget_max_cents: u64,
-    /// Price of each click, in USD cents.
-    #[arg(long, default_value_t = DEFAULT_CPC_CENTS)]
+    /// Campaign basebid / price of each click, in USD cents.
+    #[arg(long, alias = "base-bid-cents", default_value_t = DEFAULT_CPC_CENTS)]
     cpc_cents: u64,
     /// Exact number of impressions to deliver across the 30 days.
     #[arg(long)]
     impressions: Option<u64>,
-    /// Ads-ranker strategy (R1=random, R2=bandit top-K+eps-greedy, R3=greedy top-K).
-    #[arg(long, default_value_t = DEFAULT_RANKER)]
+    /// Retrieval strategy (`Retrieve-V0`/`RT0`).
+    #[arg(long, alias = "retrieval-strategy", default_value_t = DEFAULT_RETRIEVAL)]
+    retrieval: RetrievalStrategy,
+    /// Ads-ranker strategy (`R1`/`Rank-Uniform`, `R2`, `R3`/`Rank-Greedy`).
+    #[arg(long, alias = "ranking-strategy", default_value_t = DEFAULT_RANKER)]
     ranker: RankerStrategy,
-    /// Candidate scoring strategy (S0=uniform, S1=ucb1_ctr, S2=emp_ctr, S3=ecpm; defaults from --ranker).
-    #[arg(long)]
+    /// Candidate scoring strategy (`S0`/`Score-Uniform`, `S1`, `S2`, `S3`, `Score-R1`; defaults from --ranker).
+    #[arg(long, alias = "scoring-strategy")]
     scoring: Option<ScoringStrategy>,
-    /// Budget pacing strategy (P0=unpaced, P1=even_daily, P2=smooth_prob).
+    /// Budget pacing strategy (`P0`/`none`, `P1`, `P2`, `pacing-1`).
     #[arg(long, default_value_t = DEFAULT_PACING)]
     pacing: PacingStrategy,
+    /// Bidding strategy (`bidding-basebid`/`B0`, `bidding-autobid-v0`/`B1`).
+    #[arg(long, default_value_t = DEFAULT_BIDDING)]
+    bidding: BiddingStrategy,
     /// Maximum number of distinct funded campaigns returned per ad-server request.
     #[arg(long, default_value_t = DEFAULT_SLATE_SIZE)]
     slate_size: usize,
+    /// Optional directory where daily `ads-ml` JSONL impression-click logs & models are written.
+    #[arg(long)]
+    impression_log_dir: Option<PathBuf>,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -62,7 +72,7 @@ fn run_with_args(args: Args) -> Result<(), Box<dyn Error>> {
     let scoring = args
         .scoring
         .unwrap_or_else(|| args.ranker.default_scoring());
-    let report = run(
+    let report = run_with_log_dir(
         &marketplace,
         Config {
             seed: args.seed,
@@ -71,11 +81,14 @@ fn run_with_args(args: Args) -> Result<(), Box<dyn Error>> {
             campaign_budget_max_cents: args.campaign_budget_max_cents,
             cpc_cents: args.cpc_cents,
             impressions: args.impressions,
+            retrieval: args.retrieval,
             ranker: args.ranker,
             scoring,
             pacing: args.pacing,
+            bidding: args.bidding,
             slate_size: args.slate_size,
         },
+        args.impression_log_dir.as_deref(),
     )?;
 
     write_report_with_fallback_dir(&report, &args.output, Path::new("."))
@@ -127,9 +140,9 @@ mod tests {
     };
 
     use ads_marketplace_simulation::{
-        Config, DAYS, DEFAULT_CPC_CENTS, DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
-        DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_PACING, DEFAULT_RANKER, DEFAULT_SEED,
-        DEFAULT_SLATE_SIZE, OwnedReport, run,
+        Config, DAYS, DEFAULT_BIDDING, DEFAULT_CPC_CENTS, DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
+        DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_PACING, DEFAULT_RANKER, DEFAULT_RETRIEVAL,
+        DEFAULT_SEED, DEFAULT_SLATE_SIZE, OwnedReport, run,
     };
     use ads_simulator::generate_marketplace;
     use clap::Parser;
@@ -159,9 +172,11 @@ mod tests {
         );
         assert_eq!(args.cpc_cents, DEFAULT_CPC_CENTS);
         assert_eq!(args.impressions, None);
+        assert_eq!(args.retrieval, DEFAULT_RETRIEVAL);
         assert_eq!(args.ranker, DEFAULT_RANKER);
         assert_eq!(args.scoring, None);
         assert_eq!(args.pacing, DEFAULT_PACING);
+        assert_eq!(args.bidding, DEFAULT_BIDDING);
         assert_eq!(args.slate_size, DEFAULT_SLATE_SIZE);
     }
 

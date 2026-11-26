@@ -60,12 +60,14 @@ pub fn render_budget_svg(series: &BudgetTimeSeries) -> String {
         ),
     };
     let subtitle = format!(
-        "Seed {} · {} · Ranker {} / Scoring {} / Pacing {} (Slate {}) · {} Campaigns · {} · {} CPC · {}",
+        "Seed {} · {} · {} · Ranker {} / Scoring {} / Pacing {} / {} (Slate {}) · {} Campaigns · {} · {} CPC · {}",
         config.sim_seed,
         mkt_seed_label,
+        config.retrieval,
         config.ranker,
         config.scoring,
         config.pacing,
+        config.bidding,
         config.slate_size,
         format_u64_commas(summary.total_campaigns as u64),
         budget_label,
@@ -952,7 +954,8 @@ mod tests {
         assert!(svg.contains("width=\"1100\" height=\"680\" viewBox=\"0 0 1100 680\""));
         assert!(svg.contains("30-Day Ads Simulation — Budget Spent"));
         assert!(svg.contains("Mkt Seed 42"));
-        assert!(svg.contains("Ranker R1 / Scoring S0 / Pacing P0 (Slate 20)"));
+        assert!(svg.contains("Retrieve-V0"));
+        assert!(svg.contains("Ranker R1 / Scoring S0 / Pacing P0 / bidding-basebid (Slate 20)"));
         assert!(svg.contains("$1,000.00–$10,000.00/Campaign"));
 
         // Verify KPI values match the computed timeseries.
@@ -1058,9 +1061,11 @@ mod tests {
                 campaign_budget_max_cents: 400_000,
                 cpc_cents: 416,
                 impressions: Some(15_000_000),
+                retrieval: crate::DEFAULT_RETRIEVAL,
                 ranker: crate::DEFAULT_RANKER,
                 scoring: crate::DEFAULT_SCORING,
                 pacing: crate::DEFAULT_PACING,
+                bidding: crate::DEFAULT_BIDDING,
                 slate_size: crate::DEFAULT_SLATE_SIZE,
             },
             strategy: crate::StrategyProfile::default(),
@@ -1125,9 +1130,11 @@ mod tests {
                     campaign_budget_max_cents: 20_000,
                     cpc_cents: 100,
                     impressions: None,
+                    retrieval: crate::DEFAULT_RETRIEVAL,
                     ranker: crate::DEFAULT_RANKER,
                     scoring: crate::DEFAULT_SCORING,
                     pacing: crate::DEFAULT_PACING,
+                    bidding: crate::DEFAULT_BIDDING,
                     slate_size: crate::DEFAULT_SLATE_SIZE,
                 },
                 strategy: crate::StrategyProfile::default(),

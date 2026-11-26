@@ -7,9 +7,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use ad_server::{
-    AdResponse, AdServer, AdServerConfig, DEFAULT_CPC_CENTS, DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
-    DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_PACING, DEFAULT_SEED, PacingStrategy, R1_SLATE_SIZE,
-    RankerStrategy, ScoringStrategy, StrategyProfile,
+    AdResponse, AdServer, AdServerConfig, BiddingStrategy, DEFAULT_BIDDING, DEFAULT_CPC_CENTS,
+    DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS, DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_PACING,
+    DEFAULT_RETRIEVAL, DEFAULT_SEED, PacingStrategy, R1_SLATE_SIZE, RankerStrategy,
+    RetrievalStrategy, ScoringStrategy, StrategyProfile,
 };
 use ads_simulator::{DEFAULT_SEED as DEFAULT_MARKETPLACE_SEED, Marketplace, generate_marketplace};
 use clap::Parser;
@@ -20,7 +21,7 @@ use tempfile::NamedTempFile;
 #[derive(Debug, Parser)]
 #[command(
     name = "impression-generator",
-    about = "Generate user-independent ad-server requests with explicit ranking, scoring, and pacing strategies"
+    about = "Generate user-independent ad-server requests with explicit 5-axis serving strategies"
 )]
 struct Args {
     /// Optional Schema v1 marketplace.json file (generated in memory if omitted).
@@ -55,17 +56,25 @@ struct Args {
     #[arg(long, default_value_t = DEFAULT_CPC_CENTS)]
     cpc_cents: u64,
 
-    /// Ads-ranker strategy (R1=random, R2=bandit top-K+eps-greedy, R3=greedy top-K).
-    #[arg(long, default_value_t = RankerStrategy::R1)]
+    /// Campaign retrieval strategy (Retrieve-V0/RT0).
+    #[arg(long, alias = "retrieval-strategy", default_value_t = DEFAULT_RETRIEVAL)]
+    retrieval: RetrievalStrategy,
+
+    /// Ads-ranker strategy (R1/Rank-Uniform, R2=bandit+eps-greedy, R3/Rank-Greedy).
+    #[arg(long, alias = "ranking-strategy", default_value_t = RankerStrategy::R1)]
     ranker: RankerStrategy,
 
-    /// Candidate scoring strategy (S0=uniform, S1=ucb1_ctr, S2=emp_ctr, S3=ecpm; defaults from --ranker).
-    #[arg(long)]
+    /// Candidate scoring strategy (S0/Score-Uniform, S1=ucb1_ctr, S2=emp_ctr, S3=ecpm, Score-R1; defaults from --ranker).
+    #[arg(long, alias = "scoring-strategy")]
     scoring: Option<ScoringStrategy>,
 
-    /// Budget pacing strategy (P0=unpaced, P1=even_daily, P2=smooth_prob).
+    /// Budget pacing strategy (P0/none, P1=even_daily, P2=smooth_prob, pacing-1).
     #[arg(long, default_value_t = DEFAULT_PACING)]
     pacing: PacingStrategy,
+
+    /// Bidding strategy (bidding-basebid/B0, bidding-autobid-v0/B1).
+    #[arg(long, default_value_t = DEFAULT_BIDDING)]
+    bidding: BiddingStrategy,
 
     /// Maximum distinct funded campaigns served per request.
     #[arg(long, default_value_t = R1_SLATE_SIZE)]
@@ -86,9 +95,11 @@ struct RequestRecord {
 #[derive(Serialize)]
 struct GeneratorOutput {
     schema_version: u32,
+    retrieval: RetrievalStrategy,
     ranker: RankerStrategy,
     scoring: ScoringStrategy,
     pacing: PacingStrategy,
+    bidding: BiddingStrategy,
     strategy: StrategyProfile,
     slate_size: usize,
     seed: u64,
@@ -120,7 +131,14 @@ fn run(args: Args) -> Result<PathBuf, Box<dyn Error>> {
     let scoring = args
         .scoring
         .unwrap_or_else(|| args.ranker.default_scoring());
-    let strategy = StrategyProfile::new(args.ranker, scoring, args.pacing, args.slate_size);
+    let strategy = StrategyProfile::new(
+        args.retrieval,
+        args.ranker,
+        scoring,
+        args.pacing,
+        args.bidding,
+        args.slate_size,
+    );
     let user_ids: Vec<String> = marketplace.users.iter().map(|u| u.id.clone()).collect();
     let mut ad_server = AdServer::from_marketplace(
         &marketplace,
@@ -130,9 +148,11 @@ fn run(args: Args) -> Result<PathBuf, Box<dyn Error>> {
             campaign_budget_min_cents: args.campaign_budget_min_cents,
             campaign_budget_max_cents: args.campaign_budget_max_cents,
             cpc_cents: args.cpc_cents,
+            retrieval: args.retrieval,
             ranker: args.ranker,
             scoring,
             pacing: args.pacing,
+            bidding: args.bidding,
             slate_size: args.slate_size,
         },
     )?;
@@ -157,9 +177,11 @@ fn run(args: Args) -> Result<PathBuf, Box<dyn Error>> {
 
     let payload = GeneratorOutput {
         schema_version: ad_server::SCHEMA_VERSION,
+        retrieval: args.retrieval,
         ranker: args.ranker,
         scoring,
         pacing: args.pacing,
+        bidding: args.bidding,
         strategy,
         slate_size: args.slate_size,
         seed: args.seed,

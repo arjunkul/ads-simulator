@@ -1,18 +1,19 @@
 # Ads Marketplace Simulator
 
-A pure-Rust ads marketplace simulator workspace modeling shopper behavior, advertiser campaigns, user-independent ad-impression generation, a pluggable `ad-server` + `ads-ranker` (starting with Strategy **R1**: 20 random budgeted campaigns), automated post-run simulation analysis, an autonomous `sim-agent` 30-day budget plotter, and an interactive feature/flowchart/analysis dashboard.
+An ads marketplace simulator workspace modeling shopper behavior, advertiser campaigns, user-independent ad-impression generation, a pluggable 5-axis `ad-server` (**Retrieval × Pacing × Bidding × Scoring × Ranking**), daily CTR model training via `ads-ml` (`Score-R1`), automated post-run simulation analysis, an autonomous `sim-agent` 30-day budget plotter, and an interactive feature/flowchart/analysis dashboard.
 
 ## Workspace Crates
 
 | Crate | Path | Binary | Purpose |
 |---|---|---|---|
 | `ads-simulator` | `.` ([src/lib.rs](src/lib.rs)) | `ads-simulator` | Deterministic synthetic marketplace generator (10×10 taxonomy, 50 advertisers, 1,000 shoppers, 5,000 organic items, 12,000 browsing events) and `score_preference(user, item)`. |
-| `ad-server` | `ad-server/` ([ad-server/src/lib.rs](ad-server/src/lib.rs)) | *(library)* | Standalone ad-server module accepting `user_id` via `serve_ads(user_id)` and returning a set of ads from distinct funded campaigns via the pluggable `AdsRanker` trait (Strategy **R1**: up to 20 random budgeted campaigns). |
-| `impression-generator` | `impression-generator/` ([impression-generator/src/lib.rs](impression-generator/src/lib.rs)) | `impression-generator` | User-independent ad-impression generator knowing only `user_ids` (zero preference or browsing access) that operates `AdServer::serve_ads(user_id)` across 30 days. |
-| `ads-marketplace-simulation` | `simulation/` ([simulation/src/simulation.rs](simulation/src/simulation.rs)) | `ads-marketplace-simulation` | 30-day click-only CPC simulation orchestrator wiring `ImpressionGenerator` → `AdServer(R1)` → Shopper Click Evaluator (`4%` preferred / `0%` non-preferred) → Schema v1 JSON report. |
+| `ads-ml` | `ml/` ([ml/src/lib.rs](ml/src/lib.rs)) | *(library)* | Daily JSONL impression/click log store (`ImpressionLogStore`), L2-regularized logistic regression CTR model (`Score-R1` via PyTorch worker), and pre-indexed `PreparedScorer`. |
+| `ad-server` | `ad-server/` ([ad-server/src/lib.rs](ad-server/src/lib.rs)) | *(library)* | Standalone ad-server module accepting `user_id` via `serve_ads(user_id)` with explicit 5-axis strategies: Retrieval (`Retrieve-V0`), Pacing (`P0`–`P2`, `pacing-1` 24h PST intraday schedule), Bidding (`bidding-basebid`, `bidding-autobid-v0`), Scoring (`S0`–`S3`, `Score-R1`), and Ranking (`R1`–`R3`). |
+| `impression-generator` | `impression-generator/` ([impression-generator/src/lib.rs](impression-generator/src/lib.rs)) | `impression-generator` | User-independent ad-impression generator knowing only `user_ids` (zero preference or browsing access) that operates `AdServer::serve_ads(user_id)` across 30 days with optional PST diurnal timestamps. |
+| `ads-marketplace-simulation` | `simulation/` ([simulation/src/simulation.rs](simulation/src/simulation.rs)) | `ads-marketplace-simulation` | 30-day click-only CPC simulation orchestrator wiring `ImpressionGenerator` → `AdServer` → Shopper Click Evaluator (`4%` preferred / `0%` non-preferred) → Schema v1 JSON report (plus daily `Score-R1` training when selected). |
 | `simulation-analyzer` | `simulation-analyzer/` ([simulation-analyzer/src/lib.rs](simulation-analyzer/src/lib.rs)) | `simulation-analyzer` | Automated post-run analyzer computing budget depletion milestones, overall & daily CTR, eCPM, campaign spend Gini concentration, category/advertiser rollups, and diagnostic findings. |
 | `sim-agent` | `sim-agent/` ([sim-agent/src/agent.rs](sim-agent/src/agent.rs)) | `sim-agent` | Autonomous 30-day simulator runner, ledger auditor, automated analyzer, JSON/CSV exporter, and deterministic pure-Rust dual-panel SVG budget plotter. |
-| `ads-simulator-dashboard` | `dashboard/` ([dashboard/src/server.rs](dashboard/src/server.rs)) | `ads-simulator-dashboard` | Interactive web dashboard and HTTP/1.1 API featuring the Component Interaction Flowchart, 11-piece catalog, live Ad-Server R1 sampler, Automated Simulation Analyzer view, live runner, and offline `--export-dir` static bundles. |
+| `ads-simulator-dashboard` | `dashboard/` ([dashboard/src/server.rs](dashboard/src/server.rs)) | `ads-simulator-dashboard` | Interactive web dashboard and HTTP/1.1 API featuring the Component Interaction Flowchart, 11-piece catalog, live Ad-Server sampler, Automated Simulation Analyzer view, live 5-axis runner, and offline `--export-dir` static bundles. |
 
 ## Quickstart
 

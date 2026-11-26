@@ -471,12 +471,16 @@ fn cli_explicit_ranking_scoring_pacing_recorded_across_all_artifacts() {
 
     let output = Command::new(SIM_AGENT_BIN)
         .args([
+            "--retrieval",
+            "Retrieve-V0",
             "--ranker",
             "R2",
             "--scoring",
             "S2",
             "--pacing",
             "P1",
+            "--bidding",
+            "bidding-autobid-v0",
             "--impressions",
             "6000",
             "--output-dir",
@@ -491,41 +495,83 @@ fn cli_explicit_ranking_scoring_pacing_recorded_across_all_artifacts() {
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Strategy    : Ranking R2"));
+    assert!(stdout.contains("Strategy    : Retrieval Retrieve-V0"));
+    assert!(stdout.contains("Ranking R2"));
     assert!(stdout.contains("Scoring S2"));
     assert!(stdout.contains("Pacing P1"));
+    assert!(stdout.contains("Bidding bidding-autobid-v0"));
 
     let sim_report: ads_marketplace_simulation::OwnedReport = serde_json::from_str(
         &fs::read_to_string(out_dir.join(sim_agent::SIMULATION_REPORT_FILENAME)).unwrap(),
     )
     .unwrap();
+    assert_eq!(
+        sim_report.config.retrieval,
+        sim_agent::RetrievalStrategy::RetrieveV0
+    );
     assert_eq!(sim_report.config.ranker, sim_agent::RankerStrategy::R2);
     assert_eq!(sim_report.config.scoring, sim_agent::ScoringStrategy::S2);
     assert_eq!(sim_report.config.pacing, sim_agent::PacingStrategy::P1);
+    assert_eq!(
+        sim_report.config.bidding,
+        sim_agent::BiddingStrategy::AutobidV0
+    );
+    assert_eq!(
+        sim_report.strategy.retrieval,
+        sim_agent::RetrievalStrategy::RetrieveV0
+    );
     assert_eq!(sim_report.strategy.ranking, sim_agent::RankerStrategy::R2);
     assert_eq!(sim_report.strategy.scoring, sim_agent::ScoringStrategy::S2);
     assert_eq!(sim_report.strategy.pacing, sim_agent::PacingStrategy::P1);
+    assert_eq!(
+        sim_report.strategy.bidding,
+        sim_agent::BiddingStrategy::AutobidV0
+    );
 
     let ts: BudgetTimeSeries =
         serde_json::from_str(&fs::read_to_string(out_dir.join(TIMESERIES_JSON_FILENAME)).unwrap())
             .unwrap();
+    assert_eq!(
+        ts.config.retrieval,
+        sim_agent::RetrievalStrategy::RetrieveV0
+    );
     assert_eq!(ts.config.ranker, sim_agent::RankerStrategy::R2);
     assert_eq!(ts.config.scoring, sim_agent::ScoringStrategy::S2);
     assert_eq!(ts.config.pacing, sim_agent::PacingStrategy::P1);
+    assert_eq!(ts.config.bidding, sim_agent::BiddingStrategy::AutobidV0);
+    assert_eq!(
+        ts.strategy.retrieval,
+        sim_agent::RetrievalStrategy::RetrieveV0
+    );
     assert_eq!(ts.strategy.scoring, sim_agent::ScoringStrategy::S2);
     assert_eq!(ts.strategy.pacing, sim_agent::PacingStrategy::P1);
+    assert_eq!(ts.strategy.bidding, sim_agent::BiddingStrategy::AutobidV0);
 
     let analysis: sim_agent::SimulationAnalysis = serde_json::from_str(
         &fs::read_to_string(out_dir.join(sim_agent::ANALYSIS_JSON_FILENAME)).unwrap(),
     )
     .unwrap();
+    assert_eq!(
+        analysis.retrieval,
+        sim_agent::RetrievalStrategy::RetrieveV0
+    );
     assert_eq!(analysis.ranker, sim_agent::RankerStrategy::R2);
     assert_eq!(analysis.scoring, sim_agent::ScoringStrategy::S2);
     assert_eq!(analysis.pacing, sim_agent::PacingStrategy::P1);
+    assert_eq!(analysis.bidding, sim_agent::BiddingStrategy::AutobidV0);
+    assert_eq!(
+        analysis.strategy.retrieval,
+        sim_agent::RetrievalStrategy::RetrieveV0
+    );
     assert_eq!(analysis.strategy.ranking, sim_agent::RankerStrategy::R2);
     assert_eq!(analysis.strategy.scoring, sim_agent::ScoringStrategy::S2);
     assert_eq!(analysis.strategy.pacing, sim_agent::PacingStrategy::P1);
+    assert_eq!(
+        analysis.strategy.bidding,
+        sim_agent::BiddingStrategy::AutobidV0
+    );
 
     let svg = fs::read_to_string(out_dir.join(sim_agent::BUDGET_PLOT_SVG_FILENAME)).unwrap();
-    assert!(svg.contains("Ranker R2 / Scoring S2 / Pacing P1 (Slate 20)"));
+    assert!(svg.contains("Retrieve-V0"));
+    assert!(svg.contains("Ranker R2 / Scoring S2 / Pacing P1 / bidding-autobid-v0 (Slate 20)"));
 }
