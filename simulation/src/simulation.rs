@@ -18,6 +18,8 @@ use rand::{
 use rand_chacha::ChaCha8Rng;
 use serde::Serialize;
 
+use crate::retrieval::{RetrievalRequest, RetrievalStrategy, build_retriever};
+
 const DAYS: usize = 30;
 const CAMPAIGNS_PER_ADVERTISER: usize = 10;
 const MAX_CLICK_PROBABILITY: f64 = 0.04;
@@ -65,32 +67,49 @@ impl fmt::Display for ScoringStrategy {
     }
 }
 
-/// Serving strategy: a combination of a `Rank-*` ranking strategy and a `Score-*` scoring strategy.
+/// Serving strategy: a combination of a `Retrieve-*`, `Rank-*`, and `Score-*` strategy.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct ServingStrategy {
+    pub retrieval: RetrievalStrategy,
     pub ranking: RankingStrategy,
     pub scoring: ScoringStrategy,
 }
 
 impl ServingStrategy {
-    pub const fn new(ranking: RankingStrategy, scoring: ScoringStrategy) -> Self {
-        Self { ranking, scoring }
+    pub const fn new(
+        retrieval: RetrievalStrategy,
+        ranking: RankingStrategy,
+        scoring: ScoringStrategy,
+    ) -> Self {
+        Self {
+            retrieval,
+            ranking,
+            scoring,
+        }
     }
 
     #[cfg(test)]
     pub const fn uniform() -> Self {
-        Self::new(RankingStrategy::RankUniform, ScoringStrategy::ScoreUniform)
+        Self::new(
+            RetrievalStrategy::RetrieveV0,
+            RankingStrategy::RankUniform,
+            ScoringStrategy::ScoreUniform,
+        )
     }
 
     #[cfg(test)]
     pub const fn r1() -> Self {
-        Self::new(RankingStrategy::RankGreedy, ScoringStrategy::ScoreR1)
+        Self::new(
+            RetrievalStrategy::RetrieveV0,
+            RankingStrategy::RankGreedy,
+            ScoringStrategy::ScoreR1,
+        )
     }
 }
 
 impl fmt::Display for ServingStrategy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}+{}", self.ranking, self.scoring)
+        write!(f, "{}+{}+{}", self.retrieval, self.ranking, self.scoring)
     }
 }
 
@@ -362,12 +381,12 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
         .campaign_budget_cents
         .checked_mul(campaigns.len() as u64)
         .ok_or_else(|| invalid("total campaign budget does not fit in the report"))?;
-    let mut active: Vec<_> = campaigns
+    let initial_budgets: Vec<u64> = campaigns
         .iter()
-        .enumerate()
-        .filter(|(_, campaign)| campaign.remaining_budget_cents >= config.cpc_cents)
-        .map(|(index, _)| index)
+        .map(|campaign| campaign.remaining_budget_cents)
         .collect();
+    let mut retriever =
+        build_retriever(config.serving.retrieval, &initial_budgets, config.cpc_cents);
 
     let needs_training_logs = config.serving.scoring == ScoringStrategy::ScoreR1;
     let (_temp_log_dir, log_store) = if let Some(ref dir) = config.impression_log_dir {
@@ -420,24 +439,33 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
             }
             for &slot in &order {
                 daily.opportunities += 1;
-                if active.is_empty() {
+                let opportunity = &opportunities[slot];
+                let retrieval_request = RetrievalRequest {
+                    day,
+                    user_id: &opportunity.user.id,
+                    user_index: opportunity.user_index,
+                    organic_category_id: &opportunity.organic_item.category_id,
+                    organic_category_index: opportunity.organic_category_index,
+                };
+                let retrieved = retriever.retrieve(&retrieval_request);
+                if retrieved.is_empty() {
                     daily.insufficient_budget += 1;
                     continue;
                 }
-                let opportunity = &opportunities[slot];
-                let index = match (config.serving.ranking, scorer.as_ref()) {
+                let selected_pos = match (config.serving.ranking, scorer.as_ref()) {
                     (RankingStrategy::RankGreedy, Some(prepared)) => select_greedy_campaign(
                         prepared,
                         opportunity.user_index,
                         opportunity.organic_category_index,
-                        &active,
+                        retrieved,
                         &mut ads_rng,
                     ),
                     (RankingStrategy::RankUniform, _) | (RankingStrategy::RankGreedy, None) => {
-                        ads_rng.random_range(0..active.len())
+                        ads_rng.random_range(0..retrieved.len())
                     }
                 };
-                let campaign = &mut campaigns[active[index]];
+                let campaign_index = retrieved[selected_pos];
+                let campaign = &mut campaigns[campaign_index];
                 let score = score_preference(opportunity.user, campaign.item);
                 let cost = click_rng
                     .random_bool(MAX_CLICK_PROBABILITY * score)
@@ -459,9 +487,7 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
                 }
                 if let Some(cost) = cost {
                     campaign.remaining_budget_cents -= cost;
-                    if campaign.remaining_budget_cents < config.cpc_cents {
-                        active.swap_remove(index);
-                    }
+                    retriever.on_budget_update(campaign_index, campaign.remaining_budget_cents);
                 }
                 campaign.totals.impression(cost);
                 campaign.daily[day - 1].activity.impression(cost);
@@ -551,8 +577,8 @@ mod tests {
     use ads_simulator::generate_marketplace;
 
     use super::{
-        Activity, CAMPAIGNS_PER_ADVERTISER, Config, DAYS, RankingStrategy, ScoringStrategy,
-        ServingStrategy, run,
+        Activity, CAMPAIGNS_PER_ADVERTISER, Config, DAYS, RankingStrategy, RetrievalStrategy,
+        ScoringStrategy, ServingStrategy, run,
     };
 
     fn uniform_config(
@@ -848,15 +874,21 @@ mod tests {
     }
 
     #[test]
-    fn serving_strategy_composes_rank_and_score_independently() {
+    fn serving_strategy_composes_retrieval_rank_and_score_independently() {
         let marketplace = generate_marketplace(42);
         let impressions = Some(3_000);
         let baseline = run(&marketplace, uniform_config(42, 10_000, 100, impressions)).unwrap();
 
-        // Rank-Uniform + Score-R1 trains daily from disk logs while keeping uniform delivery.
-        let shadow_serving =
-            ServingStrategy::new(RankingStrategy::RankUniform, ScoringStrategy::ScoreR1);
-        assert_eq!(shadow_serving.to_string(), "Rank-Uniform+Score-R1");
+        // Retrieve-V0 + Rank-Uniform + Score-R1 trains daily from disk logs while keeping uniform delivery.
+        let shadow_serving = ServingStrategy::new(
+            RetrievalStrategy::RetrieveV0,
+            RankingStrategy::RankUniform,
+            ScoringStrategy::ScoreR1,
+        );
+        assert_eq!(
+            shadow_serving.to_string(),
+            "Retrieve-V0+Rank-Uniform+Score-R1"
+        );
         let shadow = run(
             &marketplace,
             Config {
@@ -871,14 +903,19 @@ mod tests {
         let shadow_json = serde_json::to_value(shadow.config.serving).unwrap();
         assert_eq!(
             shadow_json,
-            serde_json::json!({"ranking": "Rank-Uniform", "scoring": "Score-R1"})
+            serde_json::json!({
+                "retrieval": "Retrieve-V0",
+                "ranking": "Rank-Uniform",
+                "scoring": "Score-R1"
+            })
         );
 
-        // Rank-Greedy + Score-Uniform skips training and ties uniformly across constant scores.
+        // Retrieve-V0 + Rank-Greedy + Score-Uniform skips training and ties uniformly across constant scores.
         let greedy_uniform = run(
             &marketplace,
             Config {
                 serving: ServingStrategy::new(
+                    RetrievalStrategy::RetrieveV0,
                     RankingStrategy::RankGreedy,
                     ScoringStrategy::ScoreUniform,
                 ),
@@ -888,5 +925,33 @@ mod tests {
         .unwrap();
         assert_eq!(greedy_uniform.summary, baseline.summary);
         assert!(greedy_uniform.training_runs.is_empty());
+    }
+
+    #[test]
+    fn retrieve_v0_excludes_depleted_campaigns_from_subsequent_impressions() {
+        let marketplace = generate_marketplace(42);
+        // Budget = 100 cents, CPC = 100 cents => each campaign can receive at most 1 click
+        // before being evicted from Retrieve-V0's active index.
+        let report = run(&marketplace, uniform_config(42, 100, 100, None)).unwrap();
+        assert!(report.summary.activity.clicks > 0);
+        for campaign in &report.campaigns {
+            assert!(campaign.totals.clicks <= 1);
+            if campaign.remaining_budget_cents == 0 {
+                // Once depleted on day d, no subsequent day may serve this campaign.
+                let depletion_day = campaign
+                    .daily
+                    .iter()
+                    .find(|d| d.activity.clicks > 0)
+                    .expect("zero-budget campaign must have received a click")
+                    .day;
+                for later in &campaign.daily[depletion_day..] {
+                    assert_eq!(
+                        later.activity.impressions, 0,
+                        "campaign {} received impressions on day {} after depleting on day {}",
+                        campaign.id, later.day, depletion_day
+                    );
+                }
+            }
+        }
     }
 }

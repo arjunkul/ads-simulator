@@ -1,3 +1,4 @@
+mod retrieval;
 mod simulation;
 
 use std::{
@@ -8,6 +9,7 @@ use std::{
 };
 
 use clap::Parser;
+use retrieval::RetrievalStrategy;
 use simulation::{Config, RankingStrategy, ScoringStrategy, ServingStrategy, run};
 use tempfile::NamedTempFile;
 
@@ -31,6 +33,9 @@ struct Args {
     /// Exact number of impressions to deliver across the 30 days.
     #[arg(long)]
     impressions: Option<u64>,
+    /// Retrieval strategy (`Retrieve-*`) used to pull eligible candidate campaigns.
+    #[arg(long, value_enum, default_value_t = RetrievalStrategy::RetrieveV0)]
+    retrieval_strategy: RetrievalStrategy,
     /// Ranking strategy (`Rank-*`) used to turn candidate scores into the served ad.
     #[arg(long, value_enum, default_value_t = RankingStrategy::RankUniform)]
     ranking_strategy: RankingStrategy,
@@ -59,7 +64,11 @@ fn default_log_dir(output: &Path) -> PathBuf {
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let marketplace = serde_json::from_reader(BufReader::new(File::open(args.marketplace)?))?;
-    let serving = ServingStrategy::new(args.ranking_strategy, args.scoring_strategy);
+    let serving = ServingStrategy::new(
+        args.retrieval_strategy,
+        args.ranking_strategy,
+        args.scoring_strategy,
+    );
     let impression_log_dir = match (serving.scoring, args.impression_log_dir) {
         (_, Some(dir)) => Some(dir),
         (ScoringStrategy::ScoreR1, None) => Some(default_log_dir(&args.output)),
