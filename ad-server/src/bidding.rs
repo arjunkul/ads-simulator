@@ -1,21 +1,96 @@
-use clap::ValueEnum;
+//! Pluggable bidding strategies (`bidding-basebid`, `bidding-autobid-v0`) and 1st-price auction.
+
+use std::fmt;
+use std::str::FromStr;
+
 use rand::Rng;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 const BID_TIE_EPSILON: f64 = 1e-12;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, ValueEnum)]
+/// Default bidding strategy (`bidding-basebid` = flat base bid = CPC).
+pub const DEFAULT_BIDDING: BiddingStrategy = BiddingStrategy::Basebid;
+
+/// Bidding strategy governing candidate bid calculation and click pricing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum BiddingStrategy {
-    /// Baseline strategy: every eligible campaign bids only its flat basebid.
+    /// Baseline strategy: every eligible campaign bids only its flat basebid (`cpc_cents`).
     #[default]
-    #[serde(rename = "bidding-basebid")]
-    #[value(name = "bidding-basebid")]
+    #[serde(rename = "bidding-basebid", alias = "B0", alias = "b0", alias = "basebid")]
     Basebid,
-    /// Autobid v0: final_bid = basebid * pCTR * pacing_factor, resolved via a
-    /// 1st-price auction that charges basebid * pacing_factor on clicks.
-    #[serde(rename = "bidding-autobid-v0")]
-    #[value(name = "bidding-autobid-v0")]
+    /// Autobid v0: `final_bid = basebid * pCTR * pacing_factor`, resolved via 1st-price auction
+    /// that charges `round(basebid * pacing_factor)` on clicks.
+    #[serde(
+        rename = "bidding-autobid-v0",
+        alias = "B1",
+        alias = "b1",
+        alias = "autobid-v0",
+        alias = "autobid"
+    )]
     AutobidV0,
+}
+
+impl BiddingStrategy {
+    /// All compiled bidding strategies in registration order.
+    pub const fn all() -> &'static [BiddingStrategy] {
+        &[BiddingStrategy::Basebid, BiddingStrategy::AutobidV0]
+    }
+
+    /// Canonical identifier (`"bidding-basebid"`, `"bidding-autobid-v0"`).
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Basebid => "bidding-basebid",
+            Self::AutobidV0 => "bidding-autobid-v0",
+        }
+    }
+
+    /// Short human-readable name.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Basebid => "Flat Basebid",
+            Self::AutobidV0 => "Autobid v0 (1st-Price)",
+        }
+    }
+
+    /// Detailed human-readable description.
+    pub const fn description(self) -> &'static str {
+        match self {
+            Self::Basebid => "Every eligible campaign bids its flat CPC basebid and pays basebid on clicks",
+            Self::AutobidV0 => {
+                "Computes eCPM bid = basebid * pCTR * pacing_factor and charges round(basebid * pacing_factor) on clicks"
+            }
+        }
+    }
+
+    /// Concise bidding formula for dashboards and documentation.
+    pub const fn formula(self) -> &'static str {
+        match self {
+            Self::Basebid => "final_bid = basebid; click_price = basebid",
+            Self::AutobidV0 => "final_bid = basebid * pCTR * pacing_factor; click_price = round(basebid * pacing_factor)",
+        }
+    }
+}
+
+impl fmt::Display for BiddingStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for BiddingStrategy {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_ascii_uppercase().as_str() {
+            "BIDDING-BASEBID" | "BASEBID" | "B0" => Ok(BiddingStrategy::Basebid),
+            "BIDDING-AUTOBID-V0" | "AUTOBID-V0" | "AUTOBID_V0" | "AUTOBID" | "B1" => {
+                Ok(BiddingStrategy::AutobidV0)
+            }
+            other => Err(format!(
+                "unknown bidding strategy '{other}' (supported: bidding-basebid/B0, bidding-autobid-v0/B1)"
+            )),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -128,10 +203,28 @@ pub fn run_first_price_auction(
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
     use super::{BiddingStrategy, compute_bid, run_first_price_auction};
+
+    #[test]
+    fn bidding_strategy_parsing_and_json_round_trip() {
+        for (raw, expected) in [
+            ("bidding-basebid", BiddingStrategy::Basebid),
+            ("B0", BiddingStrategy::Basebid),
+            ("bidding-autobid-v0", BiddingStrategy::AutobidV0),
+            ("B1", BiddingStrategy::AutobidV0),
+        ] {
+            assert_eq!(BiddingStrategy::from_str(raw).unwrap(), expected);
+            let json = serde_json::to_string(&expected).unwrap();
+            let parsed: BiddingStrategy = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, expected);
+        }
+        assert!(BiddingStrategy::from_str("B99").is_err());
+    }
 
     #[test]
     fn basebid_uses_only_basebid_and_ignores_pctr() {
@@ -171,14 +264,12 @@ mod tests {
         assert_eq!(winner.candidate_index, 2);
         assert_eq!(winner.bid.click_price_cents, 100);
 
-        // Zero bids cannot win.
         let all_zero = [
             (0, compute_bid(BiddingStrategy::AutobidV0, 100, 0.0, 1.0)),
             (1, compute_bid(BiddingStrategy::AutobidV0, 100, 0.04, 0.0)),
         ];
         assert!(run_first_price_auction(all_zero, &mut rng).is_none());
 
-        // Equal top bids tie-break fairly.
         let tied = [
             (0, compute_bid(BiddingStrategy::AutobidV0, 100, 0.04, 1.0)),
             (1, compute_bid(BiddingStrategy::AutobidV0, 100, 0.04, 1.0)),

@@ -1,3 +1,5 @@
+//! PST (UTC-08:00) diurnal impression timestamps for intraday pacing schedules (`Pacing-1`).
+
 use std::fmt;
 
 use rand::Rng;
@@ -72,7 +74,6 @@ impl Serialize for PstTimestamp {
 pub fn sample_pst_second_of_day(rng: &mut impl Rng) -> u32 {
     let left_weight = MORNING_SIGMA_HOURS / (MORNING_SIGMA_HOURS + AFTERNOON_SIGMA_HOURS);
     loop {
-        // `1.0 - rng.random::<f64>()` lies strictly in `(0.0, 1.0]`, avoiding `ln(0)`.
         let u1 = 1.0 - rng.random::<f64>();
         let u2 = rng.random::<f64>();
         let half_normal = (-2.0 * u1.ln()).sqrt() * (std::f64::consts::TAU * u2).cos().abs();
@@ -127,13 +128,10 @@ mod tests {
         assert_eq!(peak_hour, 8);
         assert!(hourly[7] < peak_count && hourly[9] < peak_count);
 
-        // Traffic dies out around 6pm PST: evening volume (18:00–24:00) is < 2%
-        // of the day, and hour 18 is < 5% of the 8am peak.
         let after_6pm: u64 = hourly[18..].iter().sum();
         assert!(after_6pm * 100 < samples * 2);
         assert!(hourly[18] * 20 < peak_count);
 
-        // Daytime window (05:00–18:00 PST) carries the vast majority of traffic.
         let daytime: u64 = hourly[5..18].iter().sum();
         assert!(daytime * 100 > samples * 90);
     }

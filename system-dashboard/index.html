@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ads-Simulator — System Strategy Dashboard (100M Impressions · 3 Profiles)</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --surface-alt: #162033;
+      --border: #334155;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --primary: #38bdf8;
+      --primary-bg: rgba(56, 189, 248, 0.14);
+      --success: #34d399;
+      --success-bg: rgba(52, 211, 153, 0.14);
+      --warning: #fbbf24;
+      --warning-bg: rgba(251, 191, 36, 0.14);
+      --purple: #a78bfa;
+      --purple-bg: rgba(167, 139, 250, 0.14);
+      --r1: #94a3b8;
+      --r2: #fbbf24;
+      --r3: #34d399;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f8fafc;
+        --surface: #ffffff;
+        --surface-alt: #f1f5f9;
+        --border: #cbd5e1;
+        --text: #0f172a;
+        --muted: #475569;
+        --primary: #0284c7;
+        --primary-bg: rgba(2, 132, 199, 0.10);
+        --success: #059669;
+        --success-bg: rgba(5, 150, 105, 0.10);
+        --warning: #d97706;
+        --warning-bg: rgba(217, 119, 6, 0.10);
+        --purple: #7c3aed;
+        --purple-bg: rgba(124, 58, 237, 0.10);
+        --r1: #64748b;
+        --r2: #d97706;
+        --r3: #059669;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .container { max-width: 1260px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+    header {
+      display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px;
+      padding-bottom: 16px; border-bottom: 1px solid var(--border);
+    }
+    h1 { margin: 0; font-size: 1.5rem; letter-spacing: -0.02em; }
+    .subtitle { margin: 4px 0 0; color: var(--muted); font-size: 0.9rem; }
+    .run-pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: var(--primary-bg); border: 1px solid var(--primary); color: var(--primary);
+      padding: 6px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 600;
+    }
+    .controls { display: flex; flex-wrap: wrap; gap: 6px; }
+    .btn {
+      appearance: none; border: 1px solid var(--border); background: var(--surface-alt); color: var(--text);
+      padding: 5px 11px; border-radius: 7px; font-size: 0.78rem; font-weight: 500; cursor: pointer;
+      transition: border-color 120ms ease, background 120ms ease;
+    }
+    .btn:hover { border-color: var(--primary); }
+    .btn.active { background: var(--primary-bg); border-color: var(--primary); color: var(--primary); }
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px;
+    }
+    .kpi-label { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .kpi-value { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 4px; }
+    .kpi-sub { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+    th, td { text-align: left; padding: 11px 11px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th {
+      font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+      background: var(--surface-alt); white-space: nowrap;
+    }
+    tbody tr.clickable { cursor: pointer; transition: background 120ms ease; }
+    tbody tr.clickable:hover { background: var(--surface-alt); }
+    tbody tr.selected { background: var(--primary-bg); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-variant-numeric: tabular-nums; }
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; white-space: nowrap;
+    }
+    .badge-primary { background: var(--primary-bg); color: var(--primary); }
+    .badge-success { background: var(--success-bg); color: var(--success); }
+    .badge-warning { background: var(--warning-bg); color: var(--warning); }
+    .badge-purple { background: var(--purple-bg); color: var(--purple); }
+    .chart-header {
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
+      margin-bottom: 12px;
+    }
+    .legend { display: flex; align-items: center; gap: 14px; font-size: 0.8rem; color: var(--muted); flex-wrap: wrap; }
+    .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+    .swatch { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
+    .chart-readout {
+      font-size: 0.8rem; color: var(--muted); min-height: 20px; margin-top: 6px;
+      display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+    }
+    .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; margin-top: 12px; }
+    .registry-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+    .detail-box { background: var(--surface-alt); border: 1px solid var(--border); border-radius: 10px; padding: 12px; font-size: 0.84rem; }
+    .detail-box h3 { margin: 0 0 8px; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+    .camp-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+    .camp-list li { display: flex; justify-content: space-between; gap: 8px; font-size: 0.78rem; }
+    .reg-item { padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .reg-item:last-child { border-bottom: none; padding-bottom: 0; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82em; }
+    footer { font-size: 0.78rem; color: var(--muted); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>Ads-Simulator · System Strategy Dashboard</h1>
+        <p class="subtitle">Explicit 5-axis <code>ad-server</code> + <code>ads-ml</code> strategy contract (<strong>Retrieval × Pacing × Bidding × Scoring × Ranking</strong>) — 30-day 100M-impression 3-profile benchmark (500 campaigns · 50 advertisers · 1,000 shoppers · $1 CPC · Seed 42)</p>
+      </div>
+      <span class="run-pill mono">100,000,000 Impr · $10k–$100k/camp · $27.99M Pool</span>
+    </header>
+
+    <section class="kpi-grid" id="kpi-strip"></section>
+
+    <section class="card" style="padding: 0; overflow: hidden;">
+      <div style="padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+        <strong>100M-Impression Benchmark Runs (3 Profiles · Explicit Retrieval · Ranking · Scoring · Pacing · Bidding)</strong>
+        <span style="font-size: 0.8rem; color: var(--muted);">Click any run row to inspect exact 5-axis pipeline formula, delivery spread &amp; top campaigns</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Run Profile</th>
+              <th>Retrieval</th>
+              <th>Ranking</th>
+              <th>Scoring</th>
+              <th>Pacing</th>
+              <th>Bidding</th>
+              <th>Slate</th>
+              <th>Overall CTR</th>
+              <th>vs R1</th>
+              <th>30d Spend / Clicks</th>
+              <th>eCPM</th>
+              <th>Spend Gini</th>
+              <th>Top-10%</th>
+              <th>Days Won</th>
+            </tr>
+          </thead>
+          <tbody id="strategy-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="chart-header">
+        <div>
+          <strong>30-Day Daily Trajectory (100M Impressions · 3 Profiles)</strong>
+          <div style="font-size:0.8rem;color:var(--muted);">Profile 3 (Score-R1 PyTorch LR + pacing-1 + autobid-v0) jumps from 0.1993% (Day 1 cold-start) to 3.8257% late-month CTR (95.6% of 4.00% oracle ceiling), winning 29/30 days</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <div class="legend">
+            <span class="legend-item"><span class="swatch" style="background:var(--r3);"></span>P3 · R3 / Score-R1 / pacing-1 / autobid-v0</span>
+            <span class="legend-item"><span class="swatch" style="background:var(--r2);"></span>P2 · R2 / S1 / P0</span>
+            <span class="legend-item"><span class="swatch" style="background:var(--r1);"></span>P1 · R1 / S0 / P0</span>
+          </div>
+          <div class="controls" role="group" aria-label="Chart metric">
+            <button class="btn active" data-metric="ctr">Daily CTR (%)</button>
+            <button class="btn" data-metric="spend">Daily Spend ($)</button>
+          </div>
+          <div class="controls" role="group" aria-label="Chart view">
+            <button class="btn active" data-scope="all">All 3 Profiles</button>
+            <button class="btn" data-scope="baseline">Zoom P1 vs P2</button>
+          </div>
+        </div>
+      </div>
+      <div id="chart-container" style="width:100%;"></div>
+      <div class="chart-readout mono" id="chart-readout">Hover over any day column to inspect exact values across all 3 run profiles</div>
+    </section>
+
+    <section class="card" id="detail-panel"></section>
+
+    <section class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+        <strong>Compiled 5-Axis Strategy Registry (<code>ad-server</code> + <code>ads-ml</code>)</strong>
+        <span style="font-size:0.8rem;color:var(--muted);">Every simulation run selects and specifies all 5 axes via <code>--retrieval</code>, <code>--ranker</code>, <code>--scoring</code>, <code>--pacing</code>, and <code>--bidding</code></span>
+      </div>
+      <div class="registry-grid" id="registry-grid"></div>
+    </section>
+
+    <footer>
+      <span>Source: <code>ad-server/src/{retrieval,bidding,timestamp,ranker,strategy}.rs</code> · <code>ml/src/model.rs</code> · <code>simulation-analyzer/src/lib.rs</code></span>
+      <span class="mono">5,000,010 requests · 20.00 ads/req · 0/500 exhausted across all 3 runs</span>
+    </footer>
+  </div>
+
+  <script>
+    const REGISTRY = {
+      retrieval: [
+        { id: "Retrieve-V0", name: "Active Budget Pool (O(1) Sparse Set)", formula: "candidates(req) = { c : remaining_c >= cpc_c }", notes: "All funded campaigns via ActiveBudgetRetriever with O(1) swap-remove retirement (alias: RT0)." }
+      ],
+      ranking: [
+        { id: "R1", name: "Random Budgeted Selector", formula: "Uniform sample without replacement of min(K, |eligible|) + Fisher-Yates shuffle", notes: "Unbiased baseline; requires Scoring S0 (alias: Rank-Uniform)." },
+        { id: "R2", name: "Bandit Top-K + ε-Greedy", formula: "Cold-start (imp=0) -> Top-(K-m) by score + m ~ Bin(K, ε=0.10) explore slots", notes: "Balances exploitation with 10% uniform exploration floor." },
+        { id: "R3", name: "Greedy Top-K", formula: "Cold-start (imp=0) -> Top-K strictly by score (random tie-breaking, ε=0)", notes: "Zero ε-greedy exploration; pure top-K exploitation (alias: Rank-Greedy)." }
+      ],
+      scoring: [
+        { id: "S0", name: "Uniform (Unscored)", formula: "score(i) = 1.0", notes: "No click or impression history used (alias: Score-Uniform)." },
+        { id: "S1", name: "Online UCB1 CTR", formula: "score(i) = (clicks_i / imp_i) + 0.02 * sqrt(ln(T) / imp_i)", notes: "Low-CTR-calibrated upper confidence bound." },
+        { id: "S2", name: "Empirical CTR", formula: "score(i) = clicks_i / imp_i", notes: "Pure observed CTR with cold-start priority." },
+        { id: "S3", name: "Empirical eCPM", formula: "score(i) = (clicks_i / imp_i) * cpc_cents", notes: "Expected revenue per impression." },
+        { id: "Score-R1", name: "PyTorch L2 LR CTR (ads-ml)", formula: "pCTR(u, c) = sigmoid(w0 + w_u + w_cat + w_adv + w_camp + w_{u,cat})", notes: "Daily cold-trained L-BFGS logistic regression over exact sufficient stats (alias: S4)." }
+      ],
+      pacing: [
+        { id: "P0", name: "Unpaced (ASAP Hard Cap)", formula: "eligible(i, d) <=> remaining_i >= cpc", notes: "No daily throttle; spends until campaign budget exhausts (alias: none)." },
+        { id: "P1", name: "Even Daily Cap", formula: "eligible(i, d) <=> spent_i < ceil(budget_i * d / 30)", notes: "Linear 30-day cumulative cap with unspent budget carryover." },
+        { id: "P2", name: "Smooth Probabilistic Pacing", formula: "p_pass(i, d) = clamp((daily_target_i - today_spent_i) / daily_target_i, 0, 1)", notes: "Tapers per-request eligibility smoothly; full unlock on Day 30." },
+        { id: "pacing-1", name: "24h PST Linear Intraday Schedule", formula: "unlock_sec(spent) = floor(86400 * spent / daily_budget); eligible <=> sec_pst >= unlock_sec", notes: "Hourly PST diurnal traffic schedule with linear intraday spend unlocking (alias: P3)." }
+      ],
+      bidding: [
+        { id: "bidding-basebid", name: "Flat Base Bid", formula: "bid(i) = cpc_cents (fixed CPC base bid)", notes: "Default flat CPC bid without predicted-CTR scaling (alias: B0)." },
+        { id: "bidding-autobid-v0", name: "eCPM Auto-Bid V0", formula: "bid(i) = score(i) * cpc_cents (1st-price eCPM ranking)", notes: "Multiplies predicted CTR score by CPC base bid for auction ordering (alias: B1)." }
+      ]
+    };
+
+    const BENCHMARK = {
+      metrics: {
+        "P1 · R1/S0/P0": {
+          id: "P1 · R1/S0/P0",
+          retrieval: "Retrieve-V0", retrievalName: "Active Budget Pool",
+          ranking: "R1", rankingName: "Random Budgeted Selector",
+          scoring: "S0", scoringName: "Uniform (Unscored)",
+          pacing: "P0", pacingName: "Unpaced (ASAP Hard Cap)",
+          bidding: "bidding-basebid", biddingName: "Flat Base Bid",
+          slate: 20,
+          ctr: 0.2010, spend: "$201,037.00", clicks: "201,037", ecpm: "$2.01",
+          gini: "0.094", top10: "12.9%", util: "0.72%", exhausted: "0 / 500", zeroClick: 0,
+          impRange: "198,915 – 201,271 (median 199,991, σ 415)",
+          maxUtil: "4.30% (advertiser-07-campaign-06)",
+          daysWon: "0 / 30", runtime: "55s",
+          cli: "sim-agent --retrieval Retrieve-V0 --ranker R1 --scoring S0 --pacing P0 --bidding bidding-basebid --campaign-budget-min-cents 1000000 --campaign-budget-max-cents 10000000 --impressions 100000000",
+          notes: "Unbiased uniform baseline. Every campaign receives ~200,000 impressions (σ = 415), converging tightly to the 0.201% population-average CTR with minimal spend dispersion (Gini 0.094).",
+          dailyCtr: [0.2046,0.1965,0.2007,0.2004,0.2006,0.1987,0.2005,0.1973,0.1998,0.2004,0.2011,0.2043,0.2002,0.2020,0.2005,0.2021,0.1999,0.1981,0.2016,0.2025,0.1999,0.2054,0.2032,0.2070,0.2023,0.1997,0.1993,0.1998,0.2011,0.2019],
+          dailySpend: [6820,6549,6691,6681,6687,6624,6684,6577,6659,6679,6704,6810,6672,6733,6682,6737,6663,6602,6721,6750,6662,6847,6772,6901,6742,6655,6642,6659,6702,6730],
+          topCamps: [
+            { id: "advertiser-41-campaign-10", cat: "cat-008", stat: "200,223 impr · 573 clicks (0.286%)" },
+            { id: "advertiser-31-campaign-05", cat: "cat-001", stat: "199,952 impr · 570 clicks (0.285%)" },
+            { id: "advertiser-10-campaign-08", cat: "cat-094", stat: "200,457 impr · 550 clicks (0.274%)" }
+          ]
+        },
+        "P2 · R2/S1/P0": {
+          id: "P2 · R2/S1/P0",
+          retrieval: "Retrieve-V0", retrievalName: "Active Budget Pool",
+          ranking: "R2", rankingName: "Bandit Top-K + ε-Greedy",
+          scoring: "S1", scoringName: "Online UCB1 CTR",
+          pacing: "P0", pacingName: "Unpaced (ASAP Hard Cap)",
+          bidding: "bidding-basebid", biddingName: "Flat Base Bid",
+          slate: 20,
+          ctr: 0.2463, spend: "$246,279.00", clicks: "246,279", ecpm: "$2.46",
+          gini: "0.837", top10: "82.7%", util: "0.88%", exhausted: "0 / 500", zeroClick: 0,
+          impRange: "20,651 – 4,837,518 (median 36,321, σ 697,698)",
+          maxUtil: "66.76% (advertiser-40-campaign-06, $9,532 / $14,278)",
+          daysWon: "1 / 30", runtime: "200s",
+          cli: "sim-agent --retrieval Retrieve-V0 --ranker R2 --scoring S1 --pacing P0 --bidding bidding-basebid --campaign-budget-min-cents 1000000 --campaign-budget-max-cents 10000000 --impressions 100000000",
+          notes: "User-blind UCB1 bandit with 10% ε-greedy exploration. Wins Day 1 (0.2202%) via online intra-day learning, then saturates the ~0.252% user-blind ceiling (Days 16–30 avg: 0.2514%) while heavily concentrating spend (Gini 0.837, top-10% share 82.7%).",
+          dailyCtr: [0.2202,0.2296,0.2337,0.2416,0.2388,0.2359,0.2463,0.2437,0.2474,0.2462,0.2483,0.2479,0.2441,0.2482,0.2496,0.2500,0.2506,0.2516,0.2509,0.2482,0.2480,0.2530,0.2480,0.2544,0.2529,0.2512,0.2494,0.2527,0.2533,0.2528],
+          dailySpend: [7340,7655,7791,8054,7959,7862,8209,8123,8247,8207,8278,8262,8136,8273,8319,8333,8352,8388,8364,8272,8268,8433,8267,8481,8430,8373,8313,8422,8443,8425],
+          topCamps: [
+            { id: "advertiser-41-campaign-10", cat: "cat-008", stat: "4,781,298 impr · 12,873 clicks (0.269%)" },
+            { id: "advertiser-20-campaign-03", cat: "cat-094", stat: "4,837,518 impr · 12,641 clicks (0.261%)" },
+            { id: "advertiser-04-campaign-05", cat: "cat-036", stat: "4,834,110 impr · 12,458 clicks (0.258%)" }
+          ]
+        },
+        "P3 · R3/Score-R1/pacing-1/autobid": {
+          id: "P3 · R3/Score-R1/pacing-1/autobid",
+          retrieval: "Retrieve-V0", retrievalName: "Active Budget Pool",
+          ranking: "R3", rankingName: "Greedy Top-K",
+          scoring: "Score-R1", scoringName: "PyTorch L2 LR CTR",
+          pacing: "pacing-1", pacingName: "24h PST Intraday Linear",
+          bidding: "bidding-autobid-v0", biddingName: "eCPM Auto-Bid V0",
+          slate: 20,
+          ctr: 3.6060, spend: "$3,605,981.00", clicks: "3,605,981", ecpm: "$36.06",
+          gini: "0.136", top10: "14.2%", util: "12.88%", exhausted: "0 / 500", zeroClick: 0,
+          impRange: "82,235 – 332,408 (median 200,292, σ 47,236)",
+          maxUtil: "77.15% (advertiser-46-campaign-08, $8,697 / $11,273)",
+          daysWon: "29 / 30", runtime: "33m 20s",
+          cli: "sim-agent --retrieval Retrieve-V0 --ranker R3 --scoring Score-R1 --pacing pacing-1 --bidding bidding-autobid-v0 --campaign-budget-min-cents 1000000 --campaign-budget-max-cents 10000000 --impressions 100000000",
+          notes: "Personalized PyTorch L2 logistic regression (Score-R1) cold-trained daily on exact sufficient stats + 24h PST linear intraday pacing + eCPM autobidding. Cold-starts at 0.1993% on Day 1, leaps to 3.2291% on Day 2, and reaches 3.8257% across Days 16–30 (peaking at 3.8711% on Day 29 = 96.8% of the 4.00% oracle ceiling), while keeping Spend Gini at just 0.136 across all 500 campaigns.",
+          dailyCtr: [0.1993,3.2291,3.4521,3.5201,3.5282,3.5838,3.6151,3.6366,3.6612,3.6799,3.7009,3.7141,3.7344,3.7687,3.7697,3.7578,3.7901,3.7952,3.7913,3.8111,3.8115,3.8402,3.8282,3.8540,3.8282,3.8468,3.8431,3.8546,3.8711,3.8628],
+          dailySpend: [6645,107637,115071,117337,117608,119461,120505,121221,122040,122664,123364,123803,124480,125624,125657,125259,126338,126506,126375,127038,127050,128007,127607,128467,127608,128225,128104,128486,129035,128759],
+          topCamps: [
+            { id: "advertiser-31-campaign-07", cat: "cat-007", stat: "295,094 impr · 11,106 clicks (3.764%)" },
+            { id: "advertiser-31-campaign-05", cat: "cat-001", stat: "283,116 impr · 10,851 clicks (3.833%)" },
+            { id: "advertiser-11-campaign-03", cat: "cat-007", stat: "296,638 impr · 10,813 clicks (3.645%)" }
+          ]
+        }
+      }
+    };
+
+    const RUN_ORDER = ["P1 · R1/S0/P0", "P2 · R2/S1/P0", "P3 · R3/Score-R1/pacing-1/autobid"];
+    let selectedRun = "P3 · R3/Score-R1/pacing-1/autobid";
+    let chartMetric = "ctr";
+    let chartScope = "all";
+
+    function render() {
+      const r1 = BENCHMARK.metrics["P1 · R1/S0/P0"];
+      const r2 = BENCHMARK.metrics["P2 · R2/S1/P0"];
+      const r3 = BENCHMARK.metrics["P3 · R3/Score-R1/pacing-1/autobid"];
+      const r3Mult = r3.ctr / r1.ctr;
+
+      document.getElementById("kpi-strip").innerHTML = `
+        <div class="card">
+          <div class="kpi-label">Registered 5-Axis Stack</div>
+          <div class="kpi-value">1 × 3 × 5 × 4 × 2</div>
+          <div class="kpi-sub">1 Retrieval · 3 Ranking · 5 Scoring · 4 Pacing · 2 Bidding</div>
+        </div>
+        <div class="card">
+          <div class="kpi-label">Best Overall CTR (100M)</div>
+          <div class="kpi-value" style="color: var(--success);">${r3.ctr.toFixed(4)}%</div>
+          <div class="kpi-sub">P3 Score-R1 (${r3Mult.toFixed(2)}× vs P1 · 3.83% Days 16–30)</div>
+        </div>
+        <div class="card">
+          <div class="kpi-label">30-Day Revenue Lift</div>
+          <div class="kpi-value">+$3,404,944</div>
+          <div class="kpi-sub">P3 $3.61M vs P2 $246k vs P1 $201k (12.88% util.)</div>
+        </div>
+        <div class="card">
+          <div class="kpi-label">Spend Fairness (Gini)</div>
+          <div class="kpi-value">${r2.gini} &rarr; ${r3.gini}</div>
+          <div class="kpi-sub">Personalized targeting + pacing-1 restores low Gini (P1: ${r1.gini})</div>
+        </div>
+      `;
+
+      const tbody = document.getElementById("strategy-tbody");
+      tbody.innerHTML = "";
+      for (const id of RUN_ORDER) {
+        const m = BENCHMARK.metrics[id];
+        const lift = id === "P1 · R1/S0/P0"
+          ? `<span class="badge badge-warning">Baseline</span>`
+          : `<span class="badge badge-success">${(m.ctr / r1.ctr).toFixed(2)}× (+${(((m.ctr / r1.ctr) - 1) * 100).toFixed(1)}%)</span>`;
+        const tr = document.createElement("tr");
+        tr.className = "clickable" + (id === selectedRun ? " selected" : "");
+        tr.innerHTML = `
+          <td><strong class="mono">${m.id}</strong><div style="font-size:0.75rem;color:var(--muted);">Runtime ${m.runtime}</div></td>
+          <td><span class="badge badge-primary mono">${m.retrieval}</span><div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">${m.retrievalName}</div></td>
+          <td><span class="badge badge-success mono">${m.ranking}</span><div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">${m.rankingName}</div></td>
+          <td><span class="badge badge-purple mono">${m.scoring}</span><div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">${m.scoringName}</div></td>
+          <td><span class="badge badge-warning mono">${m.pacing}</span><div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">${m.pacingName}</div></td>
+          <td><span class="badge badge-primary mono">${m.bidding}</span><div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">${m.biddingName}</div></td>
+          <td class="mono">${m.slate}</td>
+          <td class="mono"><strong>${m.ctr.toFixed(4)}%</strong></td>
+          <td>${lift}</td>
+          <td class="mono">${m.spend}<div style="font-size:0.74rem;color:var(--muted);">${m.clicks} clicks · ${m.util}</div></td>
+          <td class="mono">${m.ecpm}</td>
+          <td class="mono">${m.gini}</td>
+          <td class="mono">${m.top10}</td>
+          <td class="mono">${m.daysWon}</td>
+        `;
+        tr.addEventListener("click", () => { selectedRun = id; render(); });
+        tbody.appendChild(tr);
+      }
+
+      const sel = BENCHMARK.metrics[selectedRun];
+      document.getElementById("detail-panel").innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span class="badge badge-primary mono">${sel.retrieval}</span>
+            <span class="badge badge-success mono">Ranking ${sel.ranking}</span>
+            <span class="badge badge-purple mono">Scoring ${sel.scoring}</span>
+            <span class="badge badge-warning mono">Pacing ${sel.pacing}</span>
+            <span class="badge badge-primary mono">${sel.bidding}</span>
+          </div>
+          <code style="color:var(--muted);">${sel.cli}</code>
+        </div>
+        <p style="margin:10px 0 0;color:var(--muted);font-size:0.89rem;">${sel.notes}</p>
+        <div class="detail-grid">
+          <div class="detail-box">
+            <h3>Active 5-Axis Strategy Stack</h3>
+            <div><strong>Retrieval (${sel.retrieval}):</strong> ${REGISTRY.retrieval.find((x) => x.id === sel.retrieval).formula}</div>
+            <div style="margin-top:4px;"><strong>Ranking (${sel.ranking}):</strong> ${REGISTRY.ranking.find((x) => x.id === sel.ranking).formula}</div>
+            <div style="margin-top:4px;"><strong>Scoring (${sel.scoring}):</strong> ${REGISTRY.scoring.find((x) => x.id === sel.scoring).formula}</div>
+            <div style="margin-top:4px;"><strong>Pacing (${sel.pacing}):</strong> ${REGISTRY.pacing.find((x) => x.id === sel.pacing).formula}</div>
+            <div style="margin-top:4px;"><strong>Bidding (${sel.bidding}):</strong> ${REGISTRY.bidding.find((x) => x.id === sel.bidding).formula}</div>
+          </div>
+          <div class="detail-box">
+            <h3>Delivery Distribution (100M Impr)</h3>
+            <div>Impr / campaign: <strong class="mono">${sel.impRange}</strong></div>
+            <div>Zero-click: <strong class="mono">${sel.zeroClick} / 500</strong> · Exhausted: <strong class="mono">${sel.exhausted}</strong></div>
+            <div>Max campaign util.: <strong class="mono">${sel.maxUtil}</strong></div>
+          </div>
+          <div class="detail-box">
+            <h3>Top 3 Campaigns by Spend</h3>
+            <ul class="camp-list mono">
+              ${sel.topCamps.map((c) => `<li><span>${c.id} (${c.cat})</span><span style="color:var(--muted);">${c.stat}</span></li>`).join("")}
+            </ul>
+          </div>
+        </div>
+      `;
+
+      document.getElementById("registry-grid").innerHTML = [
+        { title: "Retrieval Strategies (--retrieval)", badge: "badge-primary", items: REGISTRY.retrieval },
+        { title: "Ranking Strategies (--ranker)", badge: "badge-success", items: REGISTRY.ranking },
+        { title: "Scoring Strategies (--scoring)", badge: "badge-purple", items: REGISTRY.scoring },
+        { title: "Pacing Strategies (--pacing)", badge: "badge-warning", items: REGISTRY.pacing },
+        { title: "Bidding Strategies (--bidding)", badge: "badge-primary", items: REGISTRY.bidding }
+      ].map((grp) => `
+        <div class="detail-box">
+          <h3>${grp.title}</h3>
+          ${grp.items.map((it) => `
+            <div class="reg-item">
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span class="badge ${grp.badge} mono">${it.id}</span>
+                <strong>${it.name}</strong>
+              </div>
+              <div class="mono" style="font-size:0.75rem;color:var(--text);margin-top:3px;">${it.formula}</div>
+              <div style="font-size:0.76rem;color:var(--muted);margin-top:2px;">${it.notes}</div>
+            </div>
+          `).join("")}
+        </div>
+      `).join("");
+
+      renderChart();
+    }
+
+    function renderChart() {
+      const r1Arr = chartMetric === "ctr" ? BENCHMARK.metrics["P1 · R1/S0/P0"].dailyCtr : BENCHMARK.metrics["P1 · R1/S0/P0"].dailySpend;
+      const r2Arr = chartMetric === "ctr" ? BENCHMARK.metrics["P2 · R2/S1/P0"].dailyCtr : BENCHMARK.metrics["P2 · R2/S1/P0"].dailySpend;
+      const r3Arr = chartMetric === "ctr" ? BENCHMARK.metrics["P3 · R3/Score-R1/pacing-1/autobid"].dailyCtr : BENCHMARK.metrics["P3 · R3/Score-R1/pacing-1/autobid"].dailySpend;
+
+      const w = 980, h = 250, padL = 64, padR = 20, padT = 16, padB = 30;
+      const isAll = chartScope === "all";
+      const minV = isAll ? 0 : (chartMetric === "ctr" ? 0.19 : 6300);
+      const maxV = isAll ? (chartMetric === "ctr" ? 4.0 : 135000) : (chartMetric === "ctr" ? 0.26 : 8700);
+      const x = (i) => padL + (i / 29) * (w - padL - padR);
+      const y = (v) => padT + (1 - (v - minV) / (maxV - minV)) * (h - padT - padB);
+      const pathOf = (arr) => arr.map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+      const ticks = isAll
+        ? (chartMetric === "ctr" ? [0.0, 1.0, 2.0, 3.0, 4.0] : [0, 35000, 70000, 105000, 135000])
+        : (chartMetric === "ctr" ? [0.19, 0.20, 0.22, 0.24, 0.26] : [6500, 7000, 7500, 8000, 8500]);
+      const fmtTick = (t) => chartMetric === "ctr" ? `${t.toFixed(2)}%` : `$${(t / 1000).toFixed(t >= 10000 ? 0 : 1)}k`;
+
+      const container = document.getElementById("chart-container");
+      container.innerHTML = `
+        <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block;" role="img" aria-label="30-day 3-profile trajectory">
+          ${ticks.map((t) => `
+            <line x1="${padL}" x2="${w - padR}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" stroke="var(--border)" stroke-dasharray="3 3" opacity="0.7" />
+            <text x="${padL - 8}" y="${(y(t) + 4).toFixed(1)}" text-anchor="end" fill="var(--muted)" font-size="11" font-family="ui-monospace,monospace">${fmtTick(t)}</text>
+          `).join("")}
+          ${isAll && chartMetric === "ctr" ? `
+            <line x1="${padL}" x2="${w - padR}" y1="${y(4.0).toFixed(1)}" y2="${y(4.0).toFixed(1)}" stroke="var(--success)" stroke-dasharray="5 4" opacity="0.45" />
+            <text x="${w - padR - 4}" y="${(y(4.0) + 13).toFixed(1)}" text-anchor="end" fill="var(--success)" font-size="10" font-family="ui-monospace,monospace">4.00% Oracle Ceiling</text>
+          ` : ""}
+          ${[1, 5, 10, 15, 20, 25, 30].map((d) => `
+            <text x="${x(d - 1).toFixed(1)}" y="${h - 8}" text-anchor="middle" fill="var(--muted)" font-size="11" font-family="ui-monospace,monospace">Day ${d}</text>
+          `).join("")}
+          <path d="${pathOf(r1Arr)}" fill="none" stroke="var(--r1)" stroke-width="2" />
+          <path d="${pathOf(r2Arr)}" fill="none" stroke="var(--r2)" stroke-width="2.2" />
+          ${isAll ? `<path d="${pathOf(r3Arr)}" fill="none" stroke="var(--r3)" stroke-width="2.8" />` : ""}
+          ${r1Arr.map((_, i) => `
+            ${isAll ? `<circle cx="${x(i).toFixed(1)}" cy="${y(r3Arr[i]).toFixed(1)}" r="3.2" fill="var(--r3)" />` : ""}
+            <circle cx="${x(i).toFixed(1)}" cy="${y(r2Arr[i]).toFixed(1)}" r="2.6" fill="var(--r2)" />
+            <circle cx="${x(i).toFixed(1)}" cy="${y(r1Arr[i]).toFixed(1)}" r="2.2" fill="var(--r1)" />
+            <rect x="${(x(i) - 14).toFixed(1)}" y="${padT}" width="28" height="${h - padT - padB}" fill="transparent" style="cursor:crosshair;" data-day-idx="${i}" />
+          `).join("")}
+        </svg>
+      `;
+      const readout = document.getElementById("chart-readout");
+      container.querySelectorAll("[data-day-idx]").forEach((rect) => {
+        rect.addEventListener("mouseenter", () => {
+          const i = Number(rect.dataset.dayIdx);
+          const v1 = r1Arr[i], v2 = r2Arr[i], v3 = r3Arr[i];
+          if (chartMetric === "ctr") {
+            readout.innerHTML = `<span>Day ${i + 1}: P3 <strong style="color:var(--r3);">${v3.toFixed(4)}%</strong> · P2 <strong style="color:var(--r2);">${v2.toFixed(4)}%</strong> · P1 <strong>${v1.toFixed(4)}%</strong></span><span style="color:var(--success);">P3 is ${(v3 / v1).toFixed(2)}× P1 &amp; ${(v3 / v2).toFixed(2)}× P2</span>`;
+          } else {
+            readout.innerHTML = `<span>Day ${i + 1}: P3 <strong style="color:var(--r3);">$${v3.toLocaleString()}</strong> · P2 <strong style="color:var(--r2);">$${v2.toLocaleString()}</strong> · P1 <strong>$${v1.toLocaleString()}</strong></span><span style="color:var(--success);">+$${(v3 - v1).toLocaleString()} vs P1</span>`;
+          }
+        });
+      });
+    }
+
+    document.querySelectorAll("[data-metric]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        chartMetric = btn.dataset.metric;
+        document.querySelectorAll("[data-metric]").forEach((b) => b.classList.toggle("active", b === btn));
+        renderChart();
+      });
+    });
+
+    document.querySelectorAll("[data-scope]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        chartScope = btn.dataset.scope;
+        document.querySelectorAll("[data-scope]").forEach((b) => b.classList.toggle("active", b === btn));
+        renderChart();
+      });
+    });
+
+    render();
+  </script>
+</body>
+</html>

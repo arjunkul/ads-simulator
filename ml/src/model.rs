@@ -130,13 +130,27 @@ impl Default for TrainingSummary {
 
 #[derive(Serialize)]
 struct WorkerRequest<'a> {
-    log_dir: &'a Path,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    log_dir: Option<&'a Path>,
     #[serde(skip_serializing_if = "Option::is_none")]
     through_day: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     days: Option<&'a [usize]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stats_file: Option<&'a Path>,
     model_out: &'a Path,
     config: TrainingConfig,
+}
+
+/// Compact pre-aggregated exact sufficient statistics payload for [`PyTorchTrainer::train_from_sufficient_stats`].
+#[derive(Serialize)]
+pub struct SufficientStatsPayload<'a> {
+    pub user_vocab: &'a [&'a str],
+    pub ad_category_vocab: &'a [&'a str],
+    pub advertiser_vocab: &'a [&'a str],
+    pub campaign_vocab: &'a [&'a str],
+    /// Tuples `(user_idx, ad_category_idx, advertiser_idx, campaign_idx, same_category_u8, impressions, clicks)`.
+    pub groups: &'a [(usize, usize, usize, usize, u8, u64, u64)],
 }
 
 #[derive(Deserialize)]
@@ -191,6 +205,7 @@ impl PyTorchTrainer {
         }
 
         let mut child = Command::new(python_bin)
+            .env("PYTHONDONTWRITEBYTECODE", "1")
             .arg(script)
             .arg("--serve-stdio")
             .stdin(Stdio::piped())
@@ -228,9 +243,10 @@ impl PyTorchTrainer {
             return Ok(LogisticRegressionModel::untrained());
         }
         let request = WorkerRequest {
-            log_dir: store.root(),
+            log_dir: Some(store.root()),
             through_day: None,
             days: Some(&day_list),
+            stats_file: None,
             model_out,
             config,
         };
@@ -251,9 +267,45 @@ impl PyTorchTrainer {
             return Ok(LogisticRegressionModel::untrained());
         }
         let request = WorkerRequest {
-            log_dir: store.root(),
+            log_dir: Some(store.root()),
             through_day: Some(through_day),
             days: None,
+            stats_file: None,
+            model_out,
+            config,
+        };
+        self.send_request(&request)?;
+        LogisticRegressionModel::load_from_file(model_out)
+    }
+
+    /// Cold-train a fresh PyTorch logistic regression model from exact pre-aggregated sufficient
+    /// statistics serialized to `stats_file`, saving the exported model JSON to `model_out`.
+    pub fn train_from_sufficient_stats(
+        &mut self,
+        payload: &SufficientStatsPayload<'_>,
+        stats_file: &Path,
+        model_out: &Path,
+        config: TrainingConfig,
+    ) -> io::Result<LogisticRegressionModel> {
+        config.validate()?;
+        if payload.groups.is_empty() {
+            return Ok(LogisticRegressionModel::untrained());
+        }
+        if let Some(parent) = stats_file.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let file = File::create(stats_file)?;
+        let mut writer = io::BufWriter::with_capacity(256 * 1024, file);
+        serde_json::to_writer(&mut writer, payload)
+            .map_err(|err| Error::new(ErrorKind::InvalidInput, err))?;
+        writer.flush()?;
+        drop(writer);
+
+        let request = WorkerRequest {
+            log_dir: None,
+            through_day: None,
+            days: None,
+            stats_file: Some(stats_file),
             model_out,
             config,
         };
@@ -933,6 +985,51 @@ mod tests {
                     assert!(
                         (direct - fast).abs() < 1e-12,
                         "mismatch for ({user_id}, {org_cat}, {}): direct={direct} fast={fast}",
+                        candidate.campaign_id
+                    );
+                }
+            }
+        }
+
+        // Training from exact pre-aggregated sufficient stats must match JSONL log training.
+        let payload = super::SufficientStatsPayload {
+            user_vocab: &["u1", "u2", "u3"],
+            ad_category_vocab: &["cat-a", "cat-b", "cat-d", "cat-e"],
+            advertiser_vocab: &["adv-a", "adv-b", "adv-d", "adv-e"],
+            campaign_vocab: &["camp-a", "camp-b", "camp-d", "camp-e"],
+            groups: &[
+                (0, 0, 0, 0, 0, 100, 10),
+                (0, 1, 1, 1, 0, 100, 0),
+                (1, 1, 1, 1, 0, 100, 10),
+                (1, 0, 0, 0, 0, 100, 0),
+                (2, 2, 2, 2, 1, 100, 10),
+                (2, 3, 3, 3, 0, 100, 0),
+            ],
+        };
+        let stats_model = trainer
+            .train_from_sufficient_stats(
+                &payload,
+                &temp.path().join("stats-day-02.json"),
+                &temp.path().join("model-stats-02.json"),
+                TrainingConfig::default(),
+            )
+            .unwrap();
+        assert_eq!(stats_model.summary().impressions, 600);
+        assert_eq!(stats_model.summary().clicks, 30);
+        assert!((stats_model.intercept() - model.intercept()).abs() < 1e-5);
+        assert!((stats_model.same_category_weight() - model.same_category_weight()).abs() < 1e-5);
+        for &user_id in &users {
+            for &org_cat in &cats {
+                let ctx = RankingContext {
+                    user_id,
+                    organic_category_id: org_cat,
+                };
+                for candidate in &candidates {
+                    let a = model.predict_ctr(&ctx, candidate);
+                    let b = stats_model.predict_ctr(&ctx, candidate);
+                    assert!(
+                        (a - b).abs() < 1e-5,
+                        "sufficient-stats mismatch for ({user_id}, {org_cat}, {}): {a} vs {b}",
                         candidate.campaign_id
                     );
                 }

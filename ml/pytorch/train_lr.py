@@ -282,6 +282,69 @@ def load_sufficient_stats(log_dir: Path, days: Sequence[int]) -> SufficientStats
     )
 
 
+def load_sufficient_stats_from_file(stats_file: Path) -> SufficientStats:
+    """Load pre-aggregated exact sufficient statistics from a compact JSON file."""
+    with stats_file.open("r", encoding="utf-8") as handle:
+        raw = json.load(handle)
+
+    user_vocab: list[str] = raw["user_vocab"]
+    ad_cat_vocab: list[str] = raw["ad_category_vocab"]
+    adv_vocab: list[str] = raw["advertiser_vocab"]
+    camp_vocab: list[str] = raw["campaign_vocab"]
+    uc_pairs: list[tuple[int, int]] = []
+    uc_to_id: dict[tuple[int, int], int] = {}
+
+    group_user: list[int] = []
+    group_ad_cat: list[int] = []
+    group_adv: list[int] = []
+    group_camp: list[int] = []
+    group_uc: list[int] = []
+    group_same: list[float] = []
+    group_impressions: list[float] = []
+    group_clicks: list[float] = []
+
+    total_impressions = 0
+    total_clicks = 0
+
+    for u, c, a, k, same_int, imp, clk in raw["groups"]:
+        if imp <= 0:
+            continue
+        uc_key = (u, c)
+        uc = uc_to_id.get(uc_key)
+        if uc is None:
+            uc = len(uc_pairs)
+            uc_to_id[uc_key] = uc
+            uc_pairs.append(uc_key)
+        group_user.append(u)
+        group_ad_cat.append(c)
+        group_adv.append(a)
+        group_camp.append(k)
+        group_uc.append(uc)
+        group_same.append(1.0 if same_int else 0.0)
+        group_impressions.append(float(imp))
+        group_clicks.append(float(clk))
+        total_impressions += int(imp)
+        total_clicks += int(clk)
+
+    return SufficientStats(
+        user_vocab=user_vocab,
+        ad_category_vocab=ad_cat_vocab,
+        advertiser_vocab=adv_vocab,
+        campaign_vocab=camp_vocab,
+        user_ad_category_pairs=uc_pairs,
+        group_user=group_user,
+        group_ad_category=group_ad_cat,
+        group_advertiser=group_adv,
+        group_campaign=group_camp,
+        group_user_ad_category=group_uc,
+        group_same_category=group_same,
+        group_impressions=group_impressions,
+        group_clicks=group_clicks,
+        total_impressions=total_impressions,
+        total_clicks=total_clicks,
+    )
+
+
 def _configure_determinism() -> None:
     torch.manual_seed(0)
     torch.set_num_threads(1)
@@ -326,6 +389,20 @@ def train_logistic_regression(
         return _empty_artifact()
 
     stats = load_sufficient_stats(log_dir, days)
+    return train_logistic_regression_from_stats(
+        stats=stats, config=config, checkpoint_out=checkpoint_out
+    )
+
+
+def train_logistic_regression_from_stats(
+    stats: SufficientStats,
+    config: TrainingConfig = TrainingConfig(),
+    checkpoint_out: Path | None = None,
+) -> dict[str, Any]:
+    """Cold-train a fresh PyTorch LogisticRegressionCTR model from exact sufficient stats."""
+    config.validate()
+    _configure_determinism()
+
     if stats.total_impressions == 0:
         return _empty_artifact()
 
@@ -493,27 +570,38 @@ def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
 
 
 def handle_request(request: dict[str, Any]) -> dict[str, Any]:
-    log_dir = Path(request["log_dir"])
-    if "days" in request and request["days"] is not None:
-        days = [int(d) for d in request["days"]]
-    elif "through_day" in request and request["through_day"] is not None:
-        through_day = int(request["through_day"])
-        days = list(range(1, through_day + 1)) if through_day > 0 else []
-    else:
-        raise ValueError("request must provide either 'days' or 'through_day'")
-
     config = TrainingConfig.from_dict(request.get("config"))
     model_out = Path(request["model_out"])
     checkpoint_out = (
         Path(request["checkpoint_out"]) if request.get("checkpoint_out") else None
     )
 
-    artifact = train_logistic_regression(
-        log_dir=log_dir,
-        days=days,
-        config=config,
-        checkpoint_out=checkpoint_out,
-    )
+    if request.get("stats_file"):
+        stats = load_sufficient_stats_from_file(Path(request["stats_file"]))
+        artifact = train_logistic_regression_from_stats(
+            stats=stats,
+            config=config,
+            checkpoint_out=checkpoint_out,
+        )
+    else:
+        log_dir = Path(request["log_dir"])
+        if "days" in request and request["days"] is not None:
+            days = [int(d) for d in request["days"]]
+        elif "through_day" in request and request["through_day"] is not None:
+            through_day = int(request["through_day"])
+            days = list(range(1, through_day + 1)) if through_day > 0 else []
+        else:
+            raise ValueError(
+                "request must provide 'stats_file', 'days', or 'through_day'"
+            )
+
+        artifact = train_logistic_regression(
+            log_dir=log_dir,
+            days=days,
+            config=config,
+            checkpoint_out=checkpoint_out,
+        )
+
     write_json_atomic(model_out, artifact)
     return {
         "ok": True,

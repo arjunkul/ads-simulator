@@ -10,15 +10,22 @@ use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use taxonomy::TAXONOMY;
 
-const ADVERTISER_COUNT: usize = 50;
-const CATALOG_SIZE: usize = 20;
-const USER_COUNT: usize = 1_000;
-const ORGANIC_PER_CATEGORY: usize = 50;
-const INTEREST_COUNT: usize = 5;
-const AFFINITY_VIEWS: usize = 9;
-const EXPLORATION_VIEWS: usize = 3;
+pub const SCHEMA_VERSION: u32 = 1;
+pub const CURRENCY: &str = "USD";
+pub const DEFAULT_SEED: i64 = 42;
+pub const ADVERTISER_COUNT: usize = 50;
+pub const CATALOG_SIZE: usize = 20;
+pub const USER_COUNT: usize = 1_000;
+pub const ORGANIC_PER_CATEGORY: usize = 50;
+const BROWSING_FOCUS_CATEGORIES: usize = 5;
+pub const AFFINITY_VIEWS: usize = 9;
+pub const EXPLORATION_VIEWS: usize = 3;
+pub const TAXONOMY_GROUP_COUNT: usize = 10;
+pub const CATEGORIES_PER_GROUP: usize = 10;
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+const _: () = assert!(TAXONOMY.len() == TAXONOMY_GROUP_COUNT);
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Marketplace {
     pub schema_version: u32,
     pub seed: i64,
@@ -30,24 +37,23 @@ pub struct Marketplace {
     pub browsing_events: Vec<BrowsingEvent>,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Category {
     pub id: String,
     pub group: String,
     pub name: String,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Advertiser {
     pub id: String,
     pub name: String,
     pub specialty: String,
-    pub objective: String,
     pub daily_budget_cents: u32,
     pub catalog: Vec<Item>,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Item {
     pub id: String,
     pub category_id: String,
@@ -55,13 +61,12 @@ pub struct Item {
     pub price_cents: u32,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct User {
     pub id: String,
-    pub preferred_category_ids: Vec<String>,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BrowsingEvent {
     pub user_id: String,
     pub organic_item_id: String,
@@ -76,12 +81,53 @@ pub enum BrowseReason {
     Exploration,
 }
 
-/// Return 1 for an item in a preferred category, or 0 for any other item.
-pub fn score_preference(user: &User, item: &Item) -> f64 {
-    if user.preferred_category_ids.contains(&item.category_id) {
-        1.0
-    } else {
-        0.0
+/// Static configuration and derived entity counts for schema v1 marketplace generation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MarketplaceSpec {
+    pub schema_version: u32,
+    pub currency: String,
+    pub default_seed: i64,
+    pub taxonomy_group_count: usize,
+    pub categories_per_group: usize,
+    pub category_count: usize,
+    pub advertiser_count: usize,
+    pub catalog_size: usize,
+    pub total_catalog_items: usize,
+    pub user_count: usize,
+    pub organic_per_category: usize,
+    pub total_organic_items: usize,
+    pub affinity_views: usize,
+    pub exploration_views: usize,
+    pub browsing_events_per_user: usize,
+    pub total_browsing_events: usize,
+}
+
+/// Return the static 10x10 product category taxonomy in stable ID order.
+pub fn taxonomy() -> &'static [(&'static str, [&'static str; 10])] {
+    TAXONOMY
+}
+
+/// Return the compiled marketplace generation specification and derived counts.
+pub fn marketplace_spec() -> MarketplaceSpec {
+    let category_count = TAXONOMY_GROUP_COUNT * CATEGORIES_PER_GROUP;
+    let browsing_events_per_user = AFFINITY_VIEWS + EXPLORATION_VIEWS;
+    MarketplaceSpec {
+        schema_version: SCHEMA_VERSION,
+        currency: CURRENCY.into(),
+        default_seed: DEFAULT_SEED,
+        taxonomy_group_count: TAXONOMY_GROUP_COUNT,
+        categories_per_group: CATEGORIES_PER_GROUP,
+        category_count,
+        advertiser_count: ADVERTISER_COUNT,
+        catalog_size: CATALOG_SIZE,
+        total_catalog_items: ADVERTISER_COUNT * CATALOG_SIZE,
+        user_count: USER_COUNT,
+        organic_per_category: ORGANIC_PER_CATEGORY,
+        total_organic_items: category_count * ORGANIC_PER_CATEGORY,
+        affinity_views: AFFINITY_VIEWS,
+        exploration_views: EXPLORATION_VIEWS,
+        browsing_events_per_user,
+        total_browsing_events: USER_COUNT * browsing_events_per_user,
     }
 }
 
@@ -104,9 +150,9 @@ pub fn generate_marketplace(seed: i64) -> Marketplace {
     let (users, browsing_events) = generate_browsing(&categories, &organic_items, &mut rng);
 
     Marketplace {
-        schema_version: 1,
+        schema_version: SCHEMA_VERSION,
         seed,
-        currency: "USD".into(),
+        currency: CURRENCY.into(),
         categories,
         advertisers,
         users,
@@ -116,7 +162,6 @@ pub fn generate_marketplace(seed: i64) -> Marketplace {
 }
 
 fn generate_advertisers(categories: &[Category], rng: &mut ChaCha8Rng) -> Vec<Advertiser> {
-    let objectives = ["awareness", "traffic", "sales"];
     let mut next_item = 1;
     (1..=ADVERTISER_COUNT)
         .map(|number| {
@@ -146,7 +191,6 @@ fn generate_advertisers(categories: &[Category], rng: &mut ChaCha8Rng) -> Vec<Ad
                 id: format!("advertiser-{number:02}"),
                 name: format!("{group} merchant {number:02}"),
                 specialty: (*group).into(),
-                objective: objectives[rng.random_range(0..objectives.len())].into(),
                 daily_budget_cents: rng.random_range(10..=500) * 100,
                 catalog,
             }
@@ -181,27 +225,24 @@ fn generate_browsing(
 
     for number in 1..=USER_COUNT {
         let user_id = format!("user-{number:04}");
-        let interests = loop {
-            let mut sample = index::sample(rng, categories.len(), INTEREST_COUNT).into_vec();
+        let focus = loop {
+            let mut sample =
+                index::sample(rng, categories.len(), BROWSING_FOCUS_CATEGORIES).into_vec();
             sample.sort_unstable();
             if preference_sets.insert(sample.clone()) {
                 break sample;
             }
         };
-        let outside_interests: Vec<_> = (0..categories.len())
-            .filter(|category| !interests.contains(category))
+        let outside_focus: Vec<_> = (0..categories.len())
+            .filter(|category| !focus.contains(category))
             .collect();
 
         let user = User {
             id: user_id.clone(),
-            preferred_category_ids: interests
-                .iter()
-                .map(|&i| categories[i].id.clone())
-                .collect(),
         };
-        let affinity = sample_organic_items(rng, &interests, AFFINITY_VIEWS)
+        let affinity = sample_organic_items(rng, &focus, AFFINITY_VIEWS)
             .map(|item_index| (item_index, BrowseReason::Affinity));
-        let exploration = sample_organic_items(rng, &outside_interests, EXPLORATION_VIEWS)
+        let exploration = sample_organic_items(rng, &outside_focus, EXPLORATION_VIEWS)
             .map(|item_index| (item_index, BrowseReason::Exploration));
         let mut views: Vec<_> = affinity.chain(exploration).collect();
         views.shuffle(rng);
