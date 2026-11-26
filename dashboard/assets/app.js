@@ -142,7 +142,7 @@
   const FLOW_TRACES = [
     { id: "all", label: "All Flows" },
     { id: "marketplace", label: "1. Marketplace Data" },
-    { id: "ad-serving", label: "2. Impression Gen -> Ad-Server (R1)" },
+    { id: "ad-serving", label: "2. Visit Sim -> Ad-Server (R1)" },
     { id: "cpc-loop", label: "3. Click & CPC Loop" },
     { id: "analysis", label: "4. Analyzer & Plot" },
     { id: "live-ui", label: "5. Live Dashboard" },
@@ -155,7 +155,7 @@
 
     const lanes = [
       { id: "lane-mp", title: "1. ads-simulator", subtitle: "Marketplace & Preferences", x: 12, y: 14, w: 234, h: 616, color: "#38bdf8" },
-      { id: "lane-serve", title: "2. impression-generator + ad-server", subtitle: "User-Independent Gen -> Ad-Server (R1)", x: 262, y: 14, w: 344, h: 616, color: "#818cf8" },
+      { id: "lane-serve", title: "2. visit-simulator + ad-server", subtitle: "User-Independent Visits -> Ad-Server (R1)", x: 262, y: 14, w: 344, h: 616, color: "#818cf8" },
       { id: "lane-sim", title: "3. simulation + analyzer", subtitle: "Click Evaluator & Auto-Analysis", x: 622, y: 14, w: 274, h: 616, color: "#34d399" },
       { id: "lane-ui", title: "4. sim-agent + dashboard", subtitle: "SVG Plot, Live API & Export", x: 912, y: 14, w: 236, h: 616, color: "#fbbf24" },
     ];
@@ -218,15 +218,15 @@
         flows: ["marketplace"],
       },
 
-      // Lane 2: impression-generator + ad-server
+      // Lane 2: visit-simulator + ad-server
       {
-        id: "impression-generator",
-        pieceId: "impression-generator",
+        id: "visit-simulator",
+        pieceId: "visit-simulator",
         kind: "process",
-        crate: "impression-generator",
-        title: pieceName("impression-generator", "User-Independent Ad-Impression Generator"),
-        sub: "user_ids ONLY · Stream 1 · 600 req/d or quota",
-        desc: pieceSummary("impression-generator", "User-independent request generator issuing serve_ads(user_id) calls without seeing preferences."),
+        crate: "visit-simulator",
+        title: pieceName("visit-simulator", "User-Independent Visit Simulator"),
+        sub: "user_ids ONLY · Stream 1 · 600 visits/d or quota",
+        desc: pieceSummary("visit-simulator", "User-independent visit and slot simulator issuing serve_ads(user_id) calls without seeing preferences."),
         x: 278, y: 66, w: 312, h: 70, color: "#818cf8",
         flows: ["ad-serving", "cpc-loop"],
       },
@@ -386,13 +386,13 @@
       { from: "organic-inventory", to: "user-browsing", label: "9 aff + 3 exp", d: "M 129 338 L 129 378", lx: 168, ly: 360, flows: ["marketplace"] },
       { from: "user-browsing", to: "marketplace-json", label: "snapshot", d: "M 129 450 L 129 500", lx: 164, ly: 476, flows: ["marketplace"] },
 
-      // Cross-lane: ads-simulator -> impression-generator + ad-server + click evaluator
-      { from: "user-browsing", to: "impression-generator", label: "user_ids ONLY", d: "M 234 396 C 254 396, 254 101, 278 101", lx: 256, ly: 254, color: "#38bdf8", flows: ["ad-serving"] },
+      // Cross-lane: ads-simulator -> visit-simulator + ad-server + click evaluator
+      { from: "user-browsing", to: "visit-simulator", label: "user_ids ONLY", d: "M 234 396 C 254 396, 254 101, 278 101", lx: 256, ly: 254, color: "#38bdf8", flows: ["ad-serving"] },
       { from: "advertiser-catalog", to: "ad-server", label: "500 campaigns", d: "M 234 202 C 254 202, 254 211, 278 211", lx: 256, ly: 192, flows: ["ad-serving"] },
       { from: "user-browsing", to: "delivery-click-engine", label: "score_preference()", d: "M 234 432 C 256 604, 610 604, 638 156", lx: 438, ly: 598, dashed: true, color: "#38bdf8", flows: ["cpc-loop"] },
 
-      // Impression generator -> Ad-Server -> R1 -> Served Slate
-      { from: "impression-generator", to: "ad-server", label: "serve_ads(user_id)", d: "M 434 136 L 434 176", lx: 492, ly: 158, color: "#818cf8", flows: ["ad-serving", "cpc-loop"] },
+      // Visit simulator -> Ad-Server -> R1 -> Served Slate
+      { from: "visit-simulator", to: "ad-server", label: "serve_ads(user_id)", d: "M 434 136 L 434 176", lx: 492, ly: 158, color: "#818cf8", flows: ["ad-serving", "cpc-loop"] },
       { from: "ad-server", to: "active-check", label: "check pool", d: "M 404 246 L 404 268", lx: 446, ly: 258, flows: ["ad-serving", "cpc-loop"] },
       { from: "active-check", to: "skip-slot", label: "No", d: "M 492 300 L 508 300", lx: 499, ly: 288, color: "#fb7185", flows: ["ad-serving", "cpc-loop"] },
       { from: "active-check", to: "ads-ranker-r1", label: "Yes", d: "M 404 332 L 404 368", lx: 424, ly: 350, color: "#34d399", flows: ["ad-serving", "cpc-loop"] },

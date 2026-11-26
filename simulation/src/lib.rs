@@ -1,6 +1,6 @@
 //! Seeded 30-day click-only CPC ad marketplace simulation library.
 //!
-//! Wires [`impression_generator::ImpressionGenerator`] (user-independent ad-request stream),
+//! Wires [`visit_simulator::VisitSimulator`] (user-independent visit and slot-generation stream),
 //! [`ad_server::AdServer`] (campaign budget pool + explicit 5-axis `Retrieval × Pacing × Bidding
 //! × Scoring × Ranking` strategy pipeline), `ads-ml` PyTorch daily CTR training (`Score-R1`),
 //! and shopper click evaluation.
@@ -17,9 +17,9 @@ pub use ad_server::{
     build_retriever, compute_bid, daily_budget_cents, pacing_1_unlock_second,
     run_first_price_auction, sample_pst_second_of_day, validate_strategy,
 };
-pub use impression_generator::{
-    DEFAULT_DAILY_REQUESTS, DayGenerationStats, GeneratedImpression, ImpressionGenerator,
-    ImpressionGeneratorConfig, ImpressionGeneratorSpec, impression_generator_spec,
+pub use visit_simulator::{
+    DEFAULT_DAILY_REQUESTS, DayGenerationStats, GeneratedImpression, VisitSimulator,
+    VisitSimulatorConfig, VisitSimulatorSpec, visit_simulator_spec,
 };
 pub use simulation::{
     Activity, CAMPAIGNS_PER_ADVERTISER, Campaign, Config, DAYS, DEFAULT_CPC_CENTS,

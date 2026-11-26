@@ -110,7 +110,7 @@ export const tests = [
       for (const member of [
         "ml",
         "ad-server",
-        "impression-generator",
+        "visit-simulator",
         "simulation",
         "simulation-analyzer",
         "sim-agent",

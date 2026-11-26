@@ -3,7 +3,7 @@ members = [
     ".",
     "ml",
     "ad-server",
-    "impression-generator",
+    "visit-simulator",
     "simulation",
     "simulation-analyzer",
     "sim-agent",

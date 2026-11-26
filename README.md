@@ -1,6 +1,6 @@
 # Ads Marketplace Simulator
 
-An ads marketplace simulator workspace modeling shopper behavior, advertiser campaigns, user-independent ad-impression generation, a pluggable 5-axis `ad-server` (**Retrieval × Pacing × Bidding × Scoring × Ranking**), daily CTR model training via `ads-ml` (`Score-R1`), automated post-run simulation analysis, an autonomous `sim-agent` 30-day budget plotter, and an interactive feature/flowchart/analysis dashboard.
+An ads marketplace simulator workspace modeling shopper behavior, advertiser campaigns, user-independent visit simulation and ad slot generation, a pluggable 5-axis `ad-server` (**Retrieval × Pacing × Bidding × Scoring × Ranking**), daily CTR model training via `ads-ml` (`Score-R1`), automated post-run simulation analysis, an autonomous `sim-agent` 30-day budget plotter, and an interactive feature/flowchart/analysis dashboard.
 
 ## Workspace Crates
 
@@ -9,8 +9,8 @@ An ads marketplace simulator workspace modeling shopper behavior, advertiser cam
 | `ads-simulator` | `.` ([src/lib.rs](src/lib.rs)) | `ads-simulator` | Deterministic synthetic marketplace generator (10×10 taxonomy, 50 advertisers, 1,000 shoppers, 5,000 organic items, 12,000 browsing events) and `score_preference(user, item)`. |
 | `ads-ml` | `ml/` ([ml/src/lib.rs](ml/src/lib.rs)) | *(library)* | Daily JSONL impression/click log store (`ImpressionLogStore`), L2-regularized logistic regression CTR model (`Score-R1` via PyTorch worker), and pre-indexed `PreparedScorer`. |
 | `ad-server` | `ad-server/` ([ad-server/src/lib.rs](ad-server/src/lib.rs)) | *(library)* | Standalone ad-server module accepting `user_id` via `serve_ads(user_id)` with explicit 5-axis strategies: Retrieval (`Retrieve-V0`), Pacing (`P0`–`P2`, `pacing-1` 24h PST intraday schedule), Bidding (`bidding-basebid`, `bidding-autobid-v0`), Scoring (`S0`–`S3`, `Score-R1`), and Ranking (`R1`–`R3`). |
-| `impression-generator` | `impression-generator/` ([impression-generator/src/lib.rs](impression-generator/src/lib.rs)) | `impression-generator` | User-independent ad-impression generator knowing only `user_ids` (zero preference or browsing access) that operates `AdServer::serve_ads(user_id)` across 30 days with optional PST diurnal timestamps. |
-| `ads-marketplace-simulation` | `simulation/` ([simulation/src/simulation.rs](simulation/src/simulation.rs)) | `ads-marketplace-simulation` | 30-day click-only CPC simulation orchestrator wiring `ImpressionGenerator` → `AdServer` → Shopper Click Evaluator (`4%` preferred / `0%` non-preferred) → Schema v1 JSON report (plus daily `Score-R1` training when selected). |
+| `visit-simulator` | `visit-simulator/` ([visit-simulator/src/lib.rs](visit-simulator/src/lib.rs)) | `visit-simulator` | User-independent visit simulator and slot generator knowing only `user_ids` (zero preference or browsing access) that models user visits and operates `AdServer::serve_ads(user_id)` across 30 days with optional PST diurnal timestamps. |
+| `ads-marketplace-simulation` | `simulation/` ([simulation/src/simulation.rs](simulation/src/simulation.rs)) | `ads-marketplace-simulation` | 30-day click-only CPC simulation orchestrator wiring `VisitSimulator` → `AdServer` → Shopper Click Evaluator (`4%` preferred / `0%` non-preferred) → Schema v1 JSON report (plus daily `Score-R1` training when selected). |
 | `simulation-analyzer` | `simulation-analyzer/` ([simulation-analyzer/src/lib.rs](simulation-analyzer/src/lib.rs)) | `simulation-analyzer` | Automated post-run analyzer computing budget depletion milestones, overall & daily CTR, eCPM, campaign spend Gini concentration, category/advertiser rollups, and diagnostic findings. |
 | `sim-agent` | `sim-agent/` ([sim-agent/src/agent.rs](sim-agent/src/agent.rs)) | `sim-agent` | Autonomous 30-day simulator runner, ledger auditor, automated analyzer, JSON/CSV exporter, and deterministic pure-Rust dual-panel SVG budget plotter. |
 | `ads-simulator-dashboard` | `dashboard/` ([dashboard/src/server.rs](dashboard/src/server.rs)) | `ads-simulator-dashboard` | Interactive web dashboard and HTTP/1.1 API featuring the Component Interaction Flowchart, 11-piece catalog, live Ad-Server sampler, Automated Simulation Analyzer view, live 5-axis runner, and offline `--export-dir` static bundles. |
@@ -29,9 +29,9 @@ cargo test --workspace --locked
 cargo run --release --locked -p ads-simulator -- --seed 42 --output-dir /tmp/ads-cpc
 ```
 
-### 3. Run the standalone user-independent impression generator against `ad-server` (R1)
+### 3. Run the standalone user-independent visit simulator against `ad-server` (R1)
 ```sh
-cargo run --release --locked -p impression-generator -- \
+cargo run --release --locked -p visit-simulator -- \
   --marketplace /tmp/ads-cpc/marketplace.json \
   --output /tmp/ads-cpc/slates.json \
   --seed 42 --ranker R1 --slate-size 20 --requests 25
@@ -75,4 +75,4 @@ cargo run --release --locked -p ads-simulator-dashboard -- --export-dir output/d
 
 ## Documentation
 - [docs/marketplace-data.md](docs/marketplace-data.md) — Schema v1 synthetic marketplace dataset contract
-- [simulation/README.md](simulation/README.md) — 30-day CPC delivery, `ad-server` (R1), and user-independent impression generator model
+- [simulation/README.md](simulation/README.md) — 30-day CPC delivery, `ad-server` (R1), and user-independent visit simulator model

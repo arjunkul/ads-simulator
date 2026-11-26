@@ -76,7 +76,7 @@ export const tests = [
       for (const member of [
         "ml",
         "ad-server",
-        "impression-generator",
+        "visit-simulator",
         "simulation",
         "simulation-analyzer",
         "sim-agent",
@@ -140,12 +140,12 @@ export const tests = [
     tier: 2,
     area: AREA,
     features: ["F5", "F18"],
-    title: "README.md documents unified 7-crate workspace (ad-server, impression-generator, simulation-analyzer, sim-agent, dashboard)",
+    title: "README.md documents unified 7-crate workspace (ad-server, visit-simulator, simulation-analyzer, sim-agent, dashboard)",
     async fn(ctx) {
       const readme = fs.readFileSync(path.join(ctx.repoRoot, "README.md"), "utf8");
       for (const crateName of [
         "ad-server",
-        "impression-generator",
+        "visit-simulator",
         "simulation-analyzer",
         "sim-agent",
         "dashboard",

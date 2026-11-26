@@ -1,9 +1,9 @@
-//! User-independent ad-impression generator.
+//! User-independent visit simulator and ad slot generator.
 //!
-//! This module is intentionally decoupled from shopper preferences, product categories, and
-//! organic browsing history. It accepts only a list of valid `user_id`s and operates an
-//! [`ad_server::AdServer`] by issuing ad requests with `user_id` and delivering the returned
-//! multi-campaign ad slates.
+//! This module models user visits and subsequent ad slot generation while remaining intentionally
+//! decoupled from shopper preferences, product categories, and organic browsing history. It accepts
+//! only a list of valid `user_id`s and operates an [`ad_server::AdServer`] by issuing ad requests
+//! with `user_id` and delivering the returned multi-campaign ad slates.
 
 use std::collections::HashSet;
 use std::io::{Error, ErrorKind};
@@ -20,9 +20,9 @@ pub const DEFAULT_DAILY_REQUESTS: usize = 600;
 pub const DEFAULT_SEED: u64 = 42;
 pub const RNG_STREAM: u64 = 1;
 
-/// Compiled specification of the user-independent `impression-generator` system.
+/// Compiled specification of the user-independent `visit-simulator` system.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ImpressionGeneratorSpec {
+pub struct VisitSimulatorSpec {
     pub crate_name: String,
     pub binary_name: String,
     pub version: String,
@@ -33,11 +33,11 @@ pub struct ImpressionGeneratorSpec {
     pub user_independent: bool,
 }
 
-/// Return the live compiled specification of the `impression-generator` crate.
-pub fn impression_generator_spec() -> ImpressionGeneratorSpec {
-    ImpressionGeneratorSpec {
+/// Return the live compiled specification of the `visit-simulator` crate.
+pub fn visit_simulator_spec() -> VisitSimulatorSpec {
+    VisitSimulatorSpec {
         crate_name: env!("CARGO_PKG_NAME").to_owned(),
-        binary_name: "impression-generator".to_owned(),
+        binary_name: "visit-simulator".to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
         default_days: DEFAULT_DAYS,
         default_daily_requests: DEFAULT_DAILY_REQUESTS,
@@ -47,16 +47,16 @@ pub fn impression_generator_spec() -> ImpressionGeneratorSpec {
     }
 }
 
-/// Configuration for [`ImpressionGenerator`].
+/// Configuration for [`VisitSimulator`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ImpressionGeneratorConfig {
+pub struct VisitSimulatorConfig {
     pub seed: u64,
     pub days: usize,
     pub daily_requests: usize,
     pub target_impressions: Option<u64>,
 }
 
-impl Default for ImpressionGeneratorConfig {
+impl Default for VisitSimulatorConfig {
     fn default() -> Self {
         Self {
             seed: DEFAULT_SEED,
@@ -77,7 +77,7 @@ pub struct GeneratedImpression {
     pub ad: ServedAd,
 }
 
-/// Aggregate counters produced by running one day of impression generation.
+/// Aggregate counters produced by running one day of visit simulation and slot generation.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DayGenerationStats {
     pub day: usize,
@@ -89,10 +89,10 @@ pub struct DayGenerationStats {
     pub spend_cents: u64,
 }
 
-/// Standalone, user-preference-independent ad-impression generator that drives [`AdServer`].
-pub struct ImpressionGenerator {
+/// Standalone, user-preference-independent visit simulator and slot generator that drives [`AdServer`].
+pub struct VisitSimulator {
     user_ids: Vec<String>,
-    config: ImpressionGeneratorConfig,
+    config: VisitSimulatorConfig,
     rng: ChaCha8Rng,
     next_request_id: u64,
     total_impressions_delivered: u64,
@@ -102,18 +102,18 @@ fn invalid(message: impl Into<String>) -> Error {
     Error::new(ErrorKind::InvalidInput, message.into())
 }
 
-impl ImpressionGenerator {
-    /// Construct a new user-independent [`ImpressionGenerator`] from valid user IDs.
+impl VisitSimulator {
+    /// Construct a new user-independent [`VisitSimulator`] from valid user IDs.
     ///
     /// Notice this accepts ONLY user identifiers — it has no access to user preferences,
     /// categories, or organic browsing events.
-    pub fn new(user_ids: Vec<String>, config: ImpressionGeneratorConfig) -> Result<Self, Error> {
+    pub fn new(user_ids: Vec<String>, config: VisitSimulatorConfig) -> Result<Self, Error> {
         if config.days == 0 {
             return Err(invalid("days must be positive"));
         }
         let unique: HashSet<&str> = user_ids.iter().map(String::as_str).collect();
         if unique.len() != user_ids.len() {
-            return Err(invalid("duplicate user IDs supplied to impression generator"));
+            return Err(invalid("duplicate user IDs supplied to visit simulator"));
         }
 
         let mut rng = ChaCha8Rng::seed_from_u64(config.seed);
@@ -302,8 +302,7 @@ mod tests {
     use ads_simulator::generate_marketplace;
 
     use crate::{
-        DEFAULT_DAILY_REQUESTS, ImpressionGenerator, ImpressionGeneratorConfig,
-        impression_generator_spec,
+        DEFAULT_DAILY_REQUESTS, VisitSimulator, VisitSimulatorConfig, visit_simulator_spec,
     };
 
     #[test]
@@ -311,10 +310,10 @@ mod tests {
         let mp = generate_marketplace(42);
         let user_ids: Vec<String> = mp.users.iter().map(|u| u.id.clone()).collect();
         let mut ad_server = AdServer::from_marketplace(&mp, AdServerConfig::default()).unwrap();
-        let mut generator =
-            ImpressionGenerator::new(user_ids, ImpressionGeneratorConfig::default()).unwrap();
+        let mut simulator =
+            VisitSimulator::new(user_ids, VisitSimulatorConfig::default()).unwrap();
 
-        let day1 = generator.run_day(1, &mut ad_server, |_| false).unwrap();
+        let day1 = simulator.run_day(1, &mut ad_server, |_| false).unwrap();
         assert_eq!(day1.day, 1);
         assert_eq!(day1.ad_requests, DEFAULT_DAILY_REQUESTS as u64);
         assert_eq!(day1.impressions, 12_000);
@@ -340,9 +339,9 @@ mod tests {
             },
         )
         .unwrap();
-        let mut generator = ImpressionGenerator::new(
+        let mut simulator = VisitSimulator::new(
             user_ids.clone(),
-            ImpressionGeneratorConfig {
+            VisitSimulatorConfig {
                 seed: 42,
                 days: 30,
                 daily_requests: DEFAULT_DAILY_REQUESTS,
@@ -353,7 +352,7 @@ mod tests {
 
         // Day 1 quota = 34 -> requires 2 requests (20 + 14 delivered).
         let mut seen_req1 = HashSet::new();
-        let day1 = generator
+        let day1 = simulator
             .run_day(1, &mut ad_server, |imp| {
                 if imp.request_id == 1 {
                     assert!(seen_req1.insert(imp.ad.campaign_id.clone()));
@@ -378,9 +377,9 @@ mod tests {
             },
         )
         .unwrap();
-        let mut gen2 = ImpressionGenerator::new(
+        let mut sim2 = VisitSimulator::new(
             user_ids,
-            ImpressionGeneratorConfig {
+            VisitSimulatorConfig {
                 seed: 42,
                 days: 30,
                 daily_requests: DEFAULT_DAILY_REQUESTS,
@@ -388,13 +387,13 @@ mod tests {
             },
         )
         .unwrap();
-        let err = gen2.run_day(1, &mut broke_server, |_| false).unwrap_err();
+        let err = sim2.run_day(1, &mut broke_server, |_| false).unwrap_err();
         assert!(err.to_string().contains("cannot be reached on day 1"));
     }
 
     #[test]
-    fn spec_marks_generator_user_independent() {
-        let spec = impression_generator_spec();
+    fn spec_marks_simulator_user_independent() {
+        let spec = visit_simulator_spec();
         assert!(spec.user_independent);
         assert_eq!(spec.default_daily_requests, 600);
         assert_eq!(spec.default_days, 30);

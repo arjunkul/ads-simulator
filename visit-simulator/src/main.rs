@@ -1,4 +1,4 @@
-//! Standalone CLI for the user-independent ad-impression generator operating `ad-server`.
+//! Standalone CLI for the user-independent visit simulator operating `ad-server`.
 
 use std::error::Error;
 use std::fs::{self, File};
@@ -14,14 +14,14 @@ use ad_server::{
 };
 use ads_simulator::{DEFAULT_SEED as DEFAULT_MARKETPLACE_SEED, Marketplace, generate_marketplace};
 use clap::Parser;
-use impression_generator::{ImpressionGenerator, ImpressionGeneratorConfig};
 use serde::Serialize;
 use tempfile::NamedTempFile;
+use visit_simulator::{VisitSimulator, VisitSimulatorConfig};
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "impression-generator",
-    about = "Generate user-independent ad-server requests with explicit 5-axis serving strategies"
+    name = "visit-simulator",
+    about = "Simulate user-independent visits and ad slot generation with explicit 5-axis serving strategies"
 )]
 struct Args {
     /// Optional Schema v1 marketplace.json file (generated in memory if omitted).
@@ -36,7 +36,7 @@ struct Args {
     #[arg(long)]
     output: PathBuf,
 
-    /// RNG seed for ad-server and impression generator.
+    /// RNG seed for ad-server and visit simulator.
     #[arg(long, default_value_t = DEFAULT_SEED)]
     seed: u64,
 
@@ -156,18 +156,18 @@ fn run(args: Args) -> Result<PathBuf, Box<dyn Error>> {
             slate_size: args.slate_size,
         },
     )?;
-    let mut generator = ImpressionGenerator::new(
+    let mut simulator = VisitSimulator::new(
         user_ids,
-        ImpressionGeneratorConfig {
+        VisitSimulatorConfig {
             seed: args.seed,
-            ..ImpressionGeneratorConfig::default()
+            ..VisitSimulatorConfig::default()
         },
     )?;
 
     let mut slates = Vec::with_capacity(args.requests);
     let mut total_impressions = 0usize;
     for _ in 0..args.requests {
-        let (request_id, response) = generator.generate_request(&mut ad_server)?;
+        let (request_id, response) = simulator.generate_request(&mut ad_server)?;
         total_impressions += response.ads.len();
         slates.push(RequestRecord {
             request_id,

@@ -3,10 +3,10 @@
 use ad_server::ad_server_spec;
 use ads_marketplace_simulation::simulation_spec;
 use ads_simulator::{BrowseReason, generate_marketplace, marketplace_spec, taxonomy};
-use impression_generator::impression_generator_spec;
 use serde::{Deserialize, Serialize};
 use sim_agent::sim_agent_spec;
 use simulation_analyzer::analyzer_spec;
+use visit_simulator::visit_simulator_spec;
 
 /// Top-level catalog describing all architectural pieces of the simulator workspace.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -156,7 +156,7 @@ fn edge(from: &str, to: &str, label: &str) -> PipelineEdge {
 pub fn build_catalog() -> SimulatorCatalog {
     let mp = marketplace_spec();
     let srv = ad_server_spec();
-    let imp = impression_generator_spec();
+    let visit = visit_simulator_spec();
     let sim = simulation_spec();
     let analyzer = analyzer_spec();
     let agent = sim_agent_spec();
@@ -266,26 +266,26 @@ pub fn build_catalog() -> SimulatorCatalog {
             ],
         },
         SimulatorPiece {
-            id: "impression-generator".into(),
-            name: "User-Independent Ad-Impression Generator".into(),
-            crate_name: "impression-generator".into(),
+            id: "visit-simulator".into(),
+            name: "User-Independent Visit Simulator".into(),
+            crate_name: "visit-simulator".into(),
             stage: "Ad Serving & Simulation".into(),
             source_files: vec![
-                "impression-generator/src/lib.rs".into(),
-                "impression-generator/src/main.rs".into(),
+                "visit-simulator/src/lib.rs".into(),
+                "visit-simulator/src/main.rs".into(),
             ],
-            summary: "Decoupled user-independent request system that knows only user IDs (zero preference or browsing access) and operates AdServer::serve_ads(user_id) across 30 days.".into(),
+            summary: "Decoupled user-independent visit and slot-generation simulator that knows only user IDs (zero preference or browsing access) and operates AdServer::serve_ads(user_id) across 30 days.".into(),
             parameters: vec![
-                param("user_independent", "User-Preference Independent", imp.user_independent, "bool"),
-                param("default_days", "Simulation Horizon", imp.default_days, "days"),
-                param("default_daily_requests", "Default Daily Ad Requests", imp.default_daily_requests, "requests/day"),
-                param("rng_stream", "Isolated RNG Stream", format!("ChaCha8 Stream {}", imp.rng_stream), "stream"),
-                param("default_seed", "Default Seed", imp.default_seed, "u64"),
+                param("user_independent", "User-Preference Independent", visit.user_independent, "bool"),
+                param("default_days", "Simulation Horizon", visit.default_days, "days"),
+                param("default_daily_requests", "Default Daily Ad Requests", visit.default_daily_requests, "requests/day"),
+                param("rng_stream", "Isolated RNG Stream", format!("ChaCha8 Stream {}", visit.rng_stream), "stream"),
+                param("default_seed", "Default Seed", visit.default_seed, "u64"),
             ],
             features: vec![
                 feat("Compile-Time User Independence", "Accepts only user_ids: Vec<String> and &mut AdServer with zero dependency on shopper preferences or organic browsing."),
-                feat("Dual Request & Target Quota Modes", "Supports natural request streams (600 req/day = 12k impressions/day at slate 20) or exact 30-day impression quotas."),
-                feat("Standalone CLI Binary", "impression-generator CLI produces standalone JSON slates directly from user IDs and AdServer."),
+                feat("Dual Request & Target Quota Modes", "Supports natural visit request streams (600 req/day = 12k impressions/day at slate 20) or exact 30-day impression quotas."),
+                feat("Standalone CLI Binary", "visit-simulator CLI produces standalone JSON slates directly from user IDs and AdServer."),
                 feat("Unreachable Quota Guard", "Detects empty AdServer responses when budgets deplete and fails cleanly with delivered impression count."),
             ],
             gaps_and_simplifications: vec![
@@ -382,7 +382,7 @@ pub fn build_catalog() -> SimulatorCatalog {
                 "simulation/src/lib.rs".into(),
                 "simulation/src/main.rs".into(),
             ],
-            summary: "Wires ImpressionGenerator + AdServer(R1) with an isolated shopper click evaluator (4% if preferred category, else 0%) to produce balanced 30-day Schema v1 reports.".into(),
+            summary: "Wires VisitSimulator + AdServer(R1) with an isolated shopper click evaluator (4% if preferred category, else 0%) to produce balanced 30-day Schema v1 reports.".into(),
             parameters: vec![
                 param("days", "Simulation Horizon", sim.days, "days"),
                 param("max_click_probability", "Preferred-Category Click Probability", format!("{} ({:.1}%)", sim.max_click_probability, max_ctr_pct), "probability"),
@@ -391,7 +391,7 @@ pub fn build_catalog() -> SimulatorCatalog {
                 param("default_slate_size", "Default Slate Size", sim.default_slate_size, "ads / request"),
             ],
             features: vec![
-                feat("Isolated 3-Stream RNG Architecture", "Stream 0 (AdServer/Ranker), Stream 1 (ImpressionGenerator), and Stream 2 (Click Evaluator) remain strictly independent."),
+                feat("Isolated 3-Stream RNG Architecture", "Stream 0 (AdServer/Ranker), Stream 1 (VisitSimulator), and Stream 2 (Click Evaluator) remain strictly independent."),
                 feat("Preference-Gated Click-Only CPC Billing", "Non-click impressions consume $0; clicks deduct exact CPC through AdServer::record_impression."),
                 feat("Dual Borrowed & Owned Report Types", "Exports zero-copy Report and serde-deserializable OwnedReport with ad_requests, ranker, and balanced multi-level ledgers."),
             ],
@@ -501,9 +501,9 @@ pub fn build_catalog() -> SimulatorCatalog {
         edge("taxonomy-schema", "organic-inventory", "50 listings / category"),
         edge("taxonomy-schema", "user-browsing", "5 preferred categories / user"),
         edge("organic-inventory", "user-browsing", "9 affinity + 3 exploration views"),
-        edge("user-browsing", "impression-generator", "user_ids only (user-independent)"),
+        edge("user-browsing", "visit-simulator", "user_ids only (user-independent)"),
         edge("advertiser-catalog", "ad-server", "500 funded CPC campaigns"),
-        edge("impression-generator", "ad-server", "serve_ads(user_id)"),
+        edge("visit-simulator", "ad-server", "serve_ads(user_id)"),
         edge("ad-server", "ads-ranker-r1", "eligible funded pool"),
         edge("ads-ranker-r1", "ad-server", "20 distinct funded campaigns"),
         edge("ad-server", "delivery-click-engine", "20-ad slate + record_impression"),

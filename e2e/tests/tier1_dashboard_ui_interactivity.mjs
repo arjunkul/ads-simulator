@@ -359,7 +359,7 @@ export const tests = [
             return { flowText, analysisText, topRows, findingCards, slateRows, summaryText };
           })()`);
 
-          for (const token of ["Impression Generator", "Ad-Server", "R1", "Simulation Analyzer"]) {
+          for (const token of ["Visit Simulator", "Ad-Server", "R1", "Simulation Analyzer"]) {
             assert.ok(
               initial.flowText.includes(token),
               `Component flowchart SVG must include "${token}"`,

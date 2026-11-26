@@ -2652,7 +2652,7 @@ export function validateSimulatorCatalog(catalog, opts = {}) {
   for (const requiredCrate of [
     "ads-simulator",
     "ad-server",
-    "impression-generator",
+    "visit-simulator",
     "ads-marketplace-simulation",
     "simulation-analyzer",
     "sim-agent",

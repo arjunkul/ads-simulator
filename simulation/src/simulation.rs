@@ -1,6 +1,6 @@
 //! 30-day CPC simulation orchestrator.
 //!
-//! Wires [`impression_generator::ImpressionGenerator`] (user-independent ad-request stream with
+//! Wires [`visit_simulator::VisitSimulator`] (user-independent visit and slot-generation stream with
 //! optional PST diurnal timestamps for `pacing-1`), [`ad_server::AdServer`] (explicit 5-axis
 //! `Retrieval × Pacing × Bidding × Scoring × Ranking` strategy pipeline, including `Retrieve-V0`,
 //! `Pacing-1`, `bidding-autobid-v0`, and daily PyTorch `Score-R1` training via `ads-ml`), and
@@ -29,13 +29,11 @@ use ads_ml::{
     TrainingConfig,
 };
 use ads_simulator::{Item, Marketplace, User, score_preference};
-use impression_generator::{
-    DEFAULT_DAILY_REQUESTS, ImpressionGenerator, ImpressionGeneratorConfig,
-};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
+use visit_simulator::{DEFAULT_DAILY_REQUESTS, VisitSimulator, VisitSimulatorConfig};
 
 pub const SCHEMA_VERSION: u32 = SERVER_SCHEMA_VERSION;
 pub const DAYS: usize = SERVER_DAYS;
@@ -535,9 +533,9 @@ pub fn run_with_log_dir<'a>(
         ml_counts = vec![(0u64, 0u64); num_users * num_campaigns];
     }
 
-    let mut impression_generator = ImpressionGenerator::new(
+    let mut visit_simulator = VisitSimulator::new(
         user_ids.clone(),
-        ImpressionGeneratorConfig {
+        VisitSimulatorConfig {
             seed: config.seed,
             days: DAYS,
             daily_requests: DEFAULT_DAILY_REQUESTS,
@@ -565,10 +563,10 @@ pub fn run_with_log_dir<'a>(
         };
         let mut write_err: Option<Error> = None;
 
-        let day_stats = impression_generator.run_day(day, &mut ad_server, |impression| {
+        let day_stats = visit_simulator.run_day(day, &mut ad_server, |impression| {
             let user = user_lookup
                 .get(impression.user_id.as_str())
-                .expect("impression generator only emits known user IDs");
+                .expect("visit simulator only emits known user IDs");
             let &(_, item) = item_lookup
                 .get(&(
                     impression.ad.advertiser_id.as_str(),

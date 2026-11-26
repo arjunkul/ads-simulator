@@ -212,18 +212,18 @@ export const tests = [
     tier: 1,
     area: AREA,
     features: ["F7", "F8"],
-    title: "Standalone impression-generator CLI operates ad-server Strategy R1 returning 20 distinct funded campaigns per request",
+    title: "Standalone visit-simulator CLI operates ad-server Strategy R1 returning 20 distinct funded campaigns per request",
     async fn(ctx) {
       const outA = path.join(ctx.tmpDir, "slates-a.json");
       const outB = path.join(ctx.tmpDir, "slates-b.json");
-      await runBinaryOk("impression-generator", [
+      await runBinaryOk("visit-simulator", [
         "--seed", "42",
         "--requests", "15",
         "--ranker", "R1",
         "--slate-size", "20",
         "--output", outA,
       ]);
-      await runBinaryOk("impression-generator", [
+      await runBinaryOk("visit-simulator", [
         "--seed", "42",
         "--requests", "15",
         "--ranker", "R1",
@@ -234,7 +234,7 @@ export const tests = [
       assert.strictEqual(
         Buffer.compare(fs.readFileSync(outA), fs.readFileSync(outB)),
         0,
-        "impression-generator CLI must be byte-for-byte deterministic for identical seeds",
+        "visit-simulator CLI must be byte-for-byte deterministic for identical seeds",
       );
 
       const data = readJsonFile(outA);
