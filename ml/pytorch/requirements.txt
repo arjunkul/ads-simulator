@@ -1,0 +1,4 @@
+# Install CPU-only PyTorch with:
+#   pip install --index-url https://download.pytorch.org/whl/cpu -r ml/pytorch/requirements.txt
+torch>=2.2
+numpy>=1.26

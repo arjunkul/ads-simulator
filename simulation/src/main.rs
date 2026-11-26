@@ -1,3 +1,4 @@
+mod retrieval;
 mod simulation;
 
 use std::{
@@ -8,7 +9,8 @@ use std::{
 };
 
 use clap::Parser;
-use simulation::{Config, run};
+use retrieval::RetrievalStrategy;
+use simulation::{Config, RankingStrategy, ScoringStrategy, ServingStrategy, run};
 use tempfile::NamedTempFile;
 
 #[derive(Parser)]
@@ -31,11 +33,47 @@ struct Args {
     /// Exact number of impressions to deliver across the 30 days.
     #[arg(long)]
     impressions: Option<u64>,
+    /// Retrieval strategy (`Retrieve-*`) used to pull eligible candidate campaigns.
+    #[arg(long, value_enum, default_value_t = RetrievalStrategy::RetrieveV0)]
+    retrieval_strategy: RetrievalStrategy,
+    /// Ranking strategy (`Rank-*`) used to turn candidate scores into the served ad.
+    #[arg(long, value_enum, default_value_t = RankingStrategy::RankUniform)]
+    ranking_strategy: RankingStrategy,
+    /// Scoring strategy (`Score-*`) used to score eligible candidate ads.
+    #[arg(long, value_enum, default_value_t = ScoringStrategy::ScoreUniform)]
+    scoring_strategy: ScoringStrategy,
+    /// Directory where daily impression-click JSONL logs (`day-01.jsonl`, ...) are written.
+    /// Defaults to a sibling `<output_stem>-impressions` directory when `--scoring-strategy Score-R1` is used.
+    #[arg(long)]
+    impression_log_dir: Option<PathBuf>,
+}
+
+fn default_log_dir(output: &Path) -> PathBuf {
+    let parent = output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let stem = output
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or("simulation");
+    parent.join(format!("{stem}-impressions"))
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let marketplace = serde_json::from_reader(BufReader::new(File::open(args.marketplace)?))?;
+    let serving = ServingStrategy::new(
+        args.retrieval_strategy,
+        args.ranking_strategy,
+        args.scoring_strategy,
+    );
+    let impression_log_dir = match (serving.scoring, args.impression_log_dir) {
+        (_, Some(dir)) => Some(dir),
+        (ScoringStrategy::ScoreR1, None) => Some(default_log_dir(&args.output)),
+        (ScoringStrategy::ScoreUniform, None) => None,
+    };
     let report = run(
         &marketplace,
         Config {
@@ -43,6 +81,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             campaign_budget_cents: args.campaign_budget_cents,
             cpc_cents: args.cpc_cents,
             impressions: args.impressions,
+            serving,
+            impression_log_dir,
         },
     )?;
 

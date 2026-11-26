@@ -5,6 +5,7 @@ edition = "2024"
 rust-version = "1.88"
 
 [dependencies]
+ads-ml = { path = "../ml" }
 ads-simulator = { path = ".." }
 clap = { version = "4.5", features = ["derive"] }
 rand = "0.9"
