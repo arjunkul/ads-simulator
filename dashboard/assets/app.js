@@ -105,7 +105,7 @@
     versionBadge.textContent = "v" + catalog.simulator_version;
     schemaBadge.textContent = "Schema v" + catalog.schema_version + " · " + catalog.currency;
     if (rankerBadge && ts && ts.config) {
-      rankerBadge.textContent = `Ranker ${ts.config.ranker || "R1"} · ${ts.config.slate_size || 20} Ads/Req`;
+      rankerBadge.textContent = `Ranker ${ts.config.ranker || "R1"} · Scoring ${ts.config.scoring || "S0"} · Pacing ${ts.config.pacing || "P0"} · ${ts.config.slate_size || 20} Ads/Req`;
     }
     modeBadge.textContent = state.staticMode ? "Static Offline Bundle" : "Live Rust Server";
 
@@ -1157,6 +1157,8 @@
     const cpc = document.getElementById("runner-cpc");
     const impr = document.getElementById("runner-impressions");
     const ranker = document.getElementById("runner-ranker");
+    const scoring = document.getElementById("runner-scoring");
+    const pacing = document.getElementById("runner-pacing");
     const slateSize = document.getElementById("runner-slate-size");
     const nat = document.getElementById("runner-natural");
 
@@ -1171,6 +1173,8 @@
     }
     if (cpc) cpc.value = String(ts.config.cpc_cents);
     if (ranker && ts.config.ranker) ranker.value = String(ts.config.ranker);
+    if (scoring && ts.config.scoring) scoring.value = String(ts.config.scoring);
+    if (pacing && ts.config.pacing) pacing.value = String(ts.config.pacing);
     if (slateSize && ts.config.slate_size) slateSize.value = String(ts.config.slate_size);
     if (ts.config.impressions === null || ts.config.impressions === undefined) {
       if (nat) nat.checked = true;
@@ -1199,7 +1203,7 @@
       ? `${fmtUsdCents(ts.config.campaign_budget_min_cents ?? 100000)}–${fmtUsdCents(ts.config.campaign_budget_max_cents ?? 1000000)}/campaign (random)`
       : `${fmtUsdCents(ts.config.campaign_budget_cents)}/campaign`;
     meta.textContent =
-      `Seed ${ts.config.sim_seed} · Ranker ${ts.config.ranker || "R1"} (Slate ${ts.config.slate_size || 20}) · ` +
+      `Seed ${ts.config.sim_seed} · Ranker ${ts.config.ranker || "R1"} · Scoring ${ts.config.scoring || "S0"} · Pacing ${ts.config.pacing || "P0"} (Slate ${ts.config.slate_size || 20}) · ` +
       `Budget ${budgetLabel} · CPC ${fmtUsdCents(ts.config.cpc_cents)} · ${modeLabel}`;
 
     const kpis = document.getElementById("budget-kpis");
@@ -1267,7 +1271,7 @@
     const dist = a.campaign_distribution;
 
     if (meta) {
-      meta.textContent = `Ranker ${a.ranker} (Slate ${a.slate_size}) · ${a.days_analyzed} days analyzed · ${fmtInt(ctr.total_ad_requests)} Ad-Server requests (${ctr.avg_ads_per_request.toFixed(2)} avg ads/req)`;
+      meta.textContent = `Ranker ${a.ranker} · Scoring ${a.scoring || "S0"} · Pacing ${a.pacing || "P0"} (Slate ${a.slate_size}) · ${a.days_analyzed} days analyzed · ${fmtInt(ctr.total_ad_requests)} Ad-Server requests (${ctr.avg_ads_per_request.toFixed(2)} avg ads/req)`;
     }
 
     clearNode(kpis);
@@ -1528,6 +1532,17 @@
 
     const runnerForm = document.getElementById("sim-runner-form");
     const submitBtn = document.getElementById("runner-submit");
+    const rankerSelect = document.getElementById("runner-ranker");
+    const scoringSelect = document.getElementById("runner-scoring");
+    if (rankerSelect && scoringSelect) {
+      rankerSelect.addEventListener("change", () => {
+        if (rankerSelect.value === "R1") {
+          scoringSelect.value = "S0";
+        } else if (scoringSelect.value === "S0") {
+          scoringSelect.value = "S1";
+        }
+      });
+    }
     if (runnerForm) {
       runnerForm.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -1543,6 +1558,8 @@
         const cpcRaw = (document.getElementById("runner-cpc").value || "").trim();
         const imprRaw = (document.getElementById("runner-impressions").value || "").trim();
         const rankerEl = document.getElementById("runner-ranker");
+        const scoringEl = document.getElementById("runner-scoring");
+        const pacingEl = document.getElementById("runner-pacing");
         const slateEl = document.getElementById("runner-slate-size");
         const natural = Boolean(document.getElementById("runner-natural").checked);
 
@@ -1587,6 +1604,12 @@
         }
         if (rankerEl && rankerEl.value) {
           payload.ranker = rankerEl.value;
+        }
+        if (scoringEl && scoringEl.value) {
+          payload.scoring = scoringEl.value;
+        }
+        if (pacingEl && pacingEl.value) {
+          payload.pacing = pacingEl.value;
         }
         if (slateEl && slateEl.value.trim() !== "") {
           const v = parseStrictInt(slateEl.value.trim());

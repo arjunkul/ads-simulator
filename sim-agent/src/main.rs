@@ -7,14 +7,15 @@ use std::process::ExitCode;
 use clap::Parser;
 use sim_agent::{
     AgentConfig, DEFAULT_CPC_CENTS, DEFAULT_IMPRESSIONS, DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
-    DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_OUTPUT_DIR, DEFAULT_RANKER, DEFAULT_SEED,
-    DEFAULT_SLATE_SIZE, RankerStrategy, RunArtifacts, run_and_export,
+    DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_OUTPUT_DIR, DEFAULT_PACING, DEFAULT_RANKER,
+    DEFAULT_SEED, DEFAULT_SLATE_SIZE, PacingStrategy, RankerStrategy, RunArtifacts,
+    ScoringStrategy, run_and_export,
 };
 
 #[derive(Debug, Parser)]
 #[command(
     name = "sim-agent",
-    about = "Run the 30-day CPC marketplace simulator, audit ledgers, auto-analyze, and plot budget spend"
+    about = "Run the 30-day CPC marketplace simulator with explicit ranking, scoring, and pacing strategies"
 )]
 struct Args {
     /// Directory where simulation, analysis, and budget artifacts are written.
@@ -57,9 +58,17 @@ struct Args {
     #[arg(long, default_value_t = false)]
     no_impression_target: bool,
 
-    /// Ads-ranker strategy used by the ad-server (e.g. R1).
+    /// Ads-ranker strategy used by the ad-server (R1=random, R2=bandit top-K+eps-greedy, R3=greedy top-K).
     #[arg(long, default_value_t = DEFAULT_RANKER)]
     ranker: RankerStrategy,
+
+    /// Candidate scoring strategy (S0=uniform, S1=ucb1_ctr, S2=emp_ctr, S3=ecpm; defaults from --ranker).
+    #[arg(long)]
+    scoring: Option<ScoringStrategy>,
+
+    /// Budget pacing strategy (P0=unpaced, P1=even_daily, P2=smooth_prob).
+    #[arg(long, default_value_t = DEFAULT_PACING)]
+    pacing: PacingStrategy,
 
     /// Maximum distinct funded campaigns returned per ad-server request.
     #[arg(long, default_value_t = DEFAULT_SLATE_SIZE)]
@@ -75,6 +84,11 @@ impl Args {
         }
     }
 
+    fn resolve_scoring(&self) -> ScoringStrategy {
+        self.scoring
+            .unwrap_or_else(|| self.ranker.default_scoring())
+    }
+
     fn into_agent_config(&self) -> AgentConfig {
         AgentConfig {
             marketplace_path: self.marketplace.clone(),
@@ -88,6 +102,8 @@ impl Args {
             cpc_cents: self.cpc_cents,
             impressions: self.resolve_impressions(),
             ranker: self.ranker,
+            scoring: self.resolve_scoring(),
+            pacing: self.pacing,
             slate_size: self.slate_size,
         }
     }
@@ -140,10 +156,13 @@ fn print_summary(config: &AgentConfig, artifacts: &RunArtifacts) {
 
     println!("sim-agent 30-day simulation complete");
     println!("  Marketplace : {marketplace_desc}");
+    println!("  Strategy    : {}", ts.strategy);
     println!(
-        "  Config      : sim_seed={}, ranker={} (slate {}), budget={}, cpc={}, mode={mode_desc}",
+        "  Config      : sim_seed={}, ranking={}, scoring={}, pacing={}, slate={}, budget={}, cpc={}, mode={mode_desc}",
         ts.config.sim_seed,
         ts.config.ranker,
+        ts.config.scoring,
+        ts.config.pacing,
         ts.config.slate_size,
         budget_desc,
         format_usd_cents(ts.config.cpc_cents),
@@ -221,8 +240,9 @@ mod tests {
     use clap::Parser;
     use sim_agent::{
         DEFAULT_CPC_CENTS, DEFAULT_IMPRESSIONS, DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
-        DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_OUTPUT_DIR, DEFAULT_RANKER, DEFAULT_SEED,
-        DEFAULT_SLATE_SIZE,
+        DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_OUTPUT_DIR, DEFAULT_PACING, DEFAULT_RANKER,
+        DEFAULT_SCORING, DEFAULT_SEED, DEFAULT_SLATE_SIZE, PacingStrategy, RankerStrategy,
+        ScoringStrategy,
     };
 
     use crate::Args;
@@ -247,6 +267,8 @@ mod tests {
         assert_eq!(args.impressions, None);
         assert!(!args.no_impression_target);
         assert_eq!(args.ranker, DEFAULT_RANKER);
+        assert_eq!(args.scoring, None);
+        assert_eq!(args.pacing, DEFAULT_PACING);
         assert_eq!(args.slate_size, DEFAULT_SLATE_SIZE);
         assert_eq!(args.resolve_impressions(), Some(DEFAULT_IMPRESSIONS));
 
@@ -264,7 +286,33 @@ mod tests {
         );
         assert_eq!(cfg.impressions, Some(1_000_000));
         assert_eq!(cfg.ranker, DEFAULT_RANKER);
+        assert_eq!(cfg.scoring, DEFAULT_SCORING);
+        assert_eq!(cfg.pacing, DEFAULT_PACING);
         assert_eq!(cfg.slate_size, DEFAULT_SLATE_SIZE);
+
+        // Selecting R2 without --scoring resolves to S1 (Online UCB1 CTR).
+        let r2_default = Args::try_parse_from(["sim-agent", "--ranker", "R2"])
+            .unwrap()
+            .into_agent_config();
+        assert_eq!(r2_default.ranker, RankerStrategy::R2);
+        assert_eq!(r2_default.scoring, ScoringStrategy::S1);
+        assert_eq!(r2_default.pacing, PacingStrategy::P0);
+
+        // Explicit ranking, scoring, and pacing override defaults cleanly.
+        let custom = Args::try_parse_from([
+            "sim-agent",
+            "--ranker",
+            "R3",
+            "--scoring",
+            "S2",
+            "--pacing",
+            "P1",
+        ])
+        .unwrap()
+        .into_agent_config();
+        assert_eq!(custom.ranker, RankerStrategy::R3);
+        assert_eq!(custom.scoring, ScoringStrategy::S2);
+        assert_eq!(custom.pacing, PacingStrategy::P1);
     }
 
     #[test]

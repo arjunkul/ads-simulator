@@ -10,7 +10,7 @@ use std::fs::File;
 use std::io::{BufReader, Error, ErrorKind};
 use std::path::Path;
 
-use ad_server::RankerStrategy;
+use ad_server::{PacingStrategy, RankerStrategy, ScoringStrategy, StrategyProfile};
 use ads_marketplace_simulation::{DAYS, MAX_CLICK_PROBABILITY, OwnedReport, Report, SCHEMA_VERSION};
 use serde::{Deserialize, Serialize};
 
@@ -193,6 +193,12 @@ pub struct SimulationAnalysis {
     pub schema_version: u32,
     pub currency: String,
     pub ranker: RankerStrategy,
+    #[serde(default)]
+    pub scoring: ScoringStrategy,
+    #[serde(default)]
+    pub pacing: PacingStrategy,
+    #[serde(default)]
+    pub strategy: StrategyProfile,
     pub slate_size: usize,
     pub seed: u64,
     pub cpc_cents: u64,
@@ -648,9 +654,14 @@ pub fn analyze_report(report: &OwnedReport) -> Result<SimulationAnalysis, Error>
     });
     top_advertisers_by_spend.truncate(10);
 
-    let findings = synthesize_findings(
+    let strategy = StrategyProfile::new(
         report.config.ranker,
+        report.config.scoring,
+        report.config.pacing,
         report.config.slate_size,
+    );
+    let findings = synthesize_findings(
+        &strategy,
         &budget_depletion,
         &ctr_performance,
         &campaign_distribution,
@@ -660,6 +671,9 @@ pub fn analyze_report(report: &OwnedReport) -> Result<SimulationAnalysis, Error>
         schema_version: report.schema_version,
         currency: report.currency.clone(),
         ranker: report.config.ranker,
+        scoring: report.config.scoring,
+        pacing: report.config.pacing,
+        strategy,
         slate_size: report.config.slate_size,
         seed: report.config.seed,
         cpc_cents: report.config.cpc_cents,
@@ -678,13 +692,16 @@ pub fn analyze_report(report: &OwnedReport) -> Result<SimulationAnalysis, Error>
 }
 
 fn synthesize_findings(
-    ranker: RankerStrategy,
-    slate_size: usize,
+    strategy: &StrategyProfile,
     dep: &BudgetDepletionAnalysis,
     ctr: &CtrPerformanceAnalysis,
     dist: &CampaignDistributionAnalysis,
 ) -> Vec<AnalysisFinding> {
     let mut findings = Vec::new();
+    let ranker = strategy.ranking;
+    let scoring = strategy.scoring;
+    let pacing = strategy.pacing;
+    let slate_size = strategy.slate_size;
 
     if dep.total_spend_cents == 0 {
         findings.push(AnalysisFinding {
@@ -737,10 +754,9 @@ fn synthesize_findings(
             category: "budget_depletion".into(),
             title: format!("Low 30-day budget utilization ({:.2}%)", dep.utilization_pct),
             detail: format!(
-                "Spent {} of {}{proj}. Consider targeted ranking beyond {} to lift CTR and budget delivery.",
+                "Spent {} of {}{proj} under {ranker}/{scoring}/{pacing}. Consider targeted ranking/scoring beyond {ranker}/{scoring} to lift CTR and budget delivery.",
                 format_usd(dep.total_spend_cents),
                 format_usd(dep.total_budget_cents),
-                ranker
             ),
         });
     } else {
@@ -749,7 +765,7 @@ fn synthesize_findings(
             category: "budget_depletion".into(),
             title: format!("Healthy budget pacing ({:.2}% utilized)", dep.utilization_pct),
             detail: format!(
-                "Spent {} of {} with zero exhausted campaigns and mean burn {}/day.",
+                "Spent {} of {} with zero exhausted campaigns and mean burn {}/day (pacing {pacing}).",
                 format_usd(dep.total_spend_cents),
                 format_usd(dep.total_budget_cents),
                 format_usd(dep.daily_burn_cents.mean.round() as u64)
@@ -773,9 +789,7 @@ fn synthesize_findings(
                 format_usd(ctr.effective_cpm_cents.round() as u64)
             ),
             detail: format!(
-                "Ranker {} (slate {}) delivered {:.2} ads/request across {} requests. Theoretical targeted ceiling is {:.2}% ({:.1}x current CTR).",
-                ranker,
-                slate_size,
+                "Ranker {ranker} · Scoring {scoring} · Pacing {pacing} (slate {slate_size}) delivered {:.2} ads/request across {} requests. Theoretical targeted ceiling is {:.2}% ({:.1}x current CTR).",
                 ctr.avg_ads_per_request,
                 ctr.total_ad_requests,
                 ctr.theoretical_max_ctr_pct,
@@ -790,7 +804,7 @@ fn synthesize_findings(
             category: "pacing".into(),
             title: format!("High daily spend volatility (CV {:.1}%)", dep.daily_burn_cv_pct),
             detail: format!(
-                "Daily spend ranged from {} to {} (std dev {}).",
+                "Daily spend ranged from {} to {} (std dev {}) under pacing {pacing}.",
                 format_usd(dep.daily_burn_cents.min.round() as u64),
                 format_usd(dep.daily_burn_cents.max.round() as u64),
                 format_usd(dep.daily_burn_cents.std_dev.round() as u64)
@@ -845,9 +859,15 @@ pub fn render_text_summary(analysis: &SimulationAnalysis) -> String {
     let mut out = String::new();
     let _ = writeln!(
         out,
-        "Simulation Analysis (Ranker {} · Slate {} · Seed {} · {} days)",
-        analysis.ranker, analysis.slate_size, analysis.seed, analysis.days_analyzed
+        "Simulation Analysis (Ranker {} · Scoring {} · Pacing {} · Slate {} · Seed {} · {} days)",
+        analysis.ranker,
+        analysis.scoring,
+        analysis.pacing,
+        analysis.slate_size,
+        analysis.seed,
+        analysis.days_analyzed
     );
+    let _ = writeln!(out, "  Strategy         : {}", analysis.strategy);
     let _ = writeln!(
         out,
         "  Budget Depletion : {} / {} ({:.2}% utilized) · {} / {} campaigns exhausted",

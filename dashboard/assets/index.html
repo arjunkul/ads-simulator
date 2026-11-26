@@ -129,10 +129,28 @@
           <input id="runner-impressions" name="impressions" type="number" step="1" min="0" value="1000000">
         </div>
         <div class="runner-field">
-          <label for="runner-ranker">Ads-Ranker Strategy</label>
+          <label for="runner-ranker">Ranking Strategy</label>
           <select id="runner-ranker" name="ranker">
-            <option value="R1" selected>R1 (20 Random Budgeted)</option>
-            <option value="R2">R2 (Online CTR · UCB1 + ε-greedy)</option>
+            <option value="R1" selected>R1 · Random Budgeted</option>
+            <option value="R2">R2 · Bandit Top-K + 10% ε-greedy</option>
+            <option value="R3">R3 · Greedy Top-K (0% ε)</option>
+          </select>
+        </div>
+        <div class="runner-field">
+          <label for="runner-scoring">Scoring Strategy</label>
+          <select id="runner-scoring" name="scoring">
+            <option value="S0" selected>S0 · Uniform (Unscored)</option>
+            <option value="S1">S1 · Online UCB1 CTR</option>
+            <option value="S2">S2 · Empirical CTR</option>
+            <option value="S3">S3 · Empirical eCPM</option>
+          </select>
+        </div>
+        <div class="runner-field">
+          <label for="runner-pacing">Pacing Strategy</label>
+          <select id="runner-pacing" name="pacing">
+            <option value="P0" selected>P0 · Unpaced (ASAP Hard Cap)</option>
+            <option value="P1">P1 · Even Daily Cap (30d)</option>
+            <option value="P2">P2 · Smooth Probabilistic</option>
           </select>
         </div>
         <div class="runner-field">

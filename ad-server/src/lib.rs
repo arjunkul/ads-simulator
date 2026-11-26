@@ -5,6 +5,7 @@
 //! [`RankerStrategy::R1`], which selects up to 20 random campaigns with remaining budget).
 
 pub mod ranker;
+pub mod strategy;
 
 use std::collections::HashSet;
 use std::io::{Error, ErrorKind};
@@ -17,7 +18,11 @@ use serde::{Deserialize, Serialize};
 
 pub use ranker::{
     AdsRanker, R1_SLATE_SIZE, R1RandomBudgetedRanker, R2_EPSILON, R2_SLATE_SIZE,
-    R2_UCB_EXPLORATION_C, R2OnlineCtrRanker, RankerStrategy,
+    R2_UCB_EXPLORATION_C, R2OnlineCtrRanker, R3_SLATE_SIZE, R3GreedyTopKRanker, RankerStrategy,
+};
+pub use strategy::{
+    DEFAULT_PACING, DEFAULT_SCORING, PacingStrategy, ScoringStrategy, StrategyInfo,
+    StrategyProfile, validate_strategy,
 };
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -43,16 +48,30 @@ pub struct AdServerSpec {
     pub default_max_campaign_budget_cents: u64,
     pub default_cpc_cents: u64,
     pub default_ranker: RankerStrategy,
+    #[serde(default)]
+    pub default_scoring: ScoringStrategy,
+    #[serde(default)]
+    pub default_pacing: PacingStrategy,
     pub default_slate_size: usize,
     pub supported_rankers: Vec<RankerInfo>,
+    #[serde(default)]
+    pub supported_scorers: Vec<StrategyInfo>,
+    #[serde(default)]
+    pub supported_pacers: Vec<StrategyInfo>,
 }
 
 /// Metadata describing a registered ranker strategy.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RankerInfo {
     pub id: String,
+    #[serde(default)]
+    pub name: String,
     pub description: String,
+    #[serde(default)]
+    pub formula: String,
     pub default_slate_size: usize,
+    #[serde(default)]
+    pub default_scoring: ScoringStrategy,
 }
 
 /// Return the live compiled specification of the `ad-server` crate.
@@ -68,13 +87,36 @@ pub fn ad_server_spec() -> AdServerSpec {
         default_max_campaign_budget_cents: DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
         default_cpc_cents: DEFAULT_CPC_CENTS,
         default_ranker: RankerStrategy::R1,
+        default_scoring: DEFAULT_SCORING,
+        default_pacing: DEFAULT_PACING,
         default_slate_size: R1_SLATE_SIZE,
         supported_rankers: RankerStrategy::all()
             .iter()
             .map(|&strategy| RankerInfo {
                 id: strategy.as_str().to_owned(),
+                name: strategy.name().to_owned(),
                 description: strategy.description().to_owned(),
+                formula: strategy.formula().to_owned(),
                 default_slate_size: strategy.default_slate_size(),
+                default_scoring: strategy.default_scoring(),
+            })
+            .collect(),
+        supported_scorers: ScoringStrategy::all()
+            .iter()
+            .map(|&scoring| StrategyInfo {
+                id: scoring.as_str().to_owned(),
+                name: scoring.name().to_owned(),
+                description: scoring.description().to_owned(),
+                formula: scoring.formula().to_owned(),
+            })
+            .collect(),
+        supported_pacers: PacingStrategy::all()
+            .iter()
+            .map(|&pacing| StrategyInfo {
+                id: pacing.as_str().to_owned(),
+                name: pacing.name().to_owned(),
+                description: pacing.description().to_owned(),
+                formula: pacing.formula().to_owned(),
             })
             .collect(),
     }
@@ -95,6 +137,10 @@ pub struct AdServerConfig {
     pub cpc_cents: u64,
     #[serde(default)]
     pub ranker: RankerStrategy,
+    #[serde(default)]
+    pub scoring: ScoringStrategy,
+    #[serde(default)]
+    pub pacing: PacingStrategy,
     #[serde(default = "default_slate_size")]
     pub slate_size: usize,
 }
@@ -122,6 +168,11 @@ impl AdServerConfig {
             ),
         }
     }
+
+    /// Return the explicit 3-axis [`StrategyProfile`] represented by this config.
+    pub fn strategy_profile(&self) -> StrategyProfile {
+        StrategyProfile::new(self.ranker, self.scoring, self.pacing, self.slate_size)
+    }
 }
 
 impl Default for AdServerConfig {
@@ -133,6 +184,8 @@ impl Default for AdServerConfig {
             campaign_budget_max_cents: DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
             cpc_cents: DEFAULT_CPC_CENTS,
             ranker: RankerStrategy::R1,
+            scoring: DEFAULT_SCORING,
+            pacing: DEFAULT_PACING,
             slate_size: R1_SLATE_SIZE,
         }
     }
@@ -204,16 +257,22 @@ pub struct ServedAd {
 pub struct AdResponse {
     pub user_id: String,
     pub strategy: RankerStrategy,
+    #[serde(default)]
+    pub scoring: ScoringStrategy,
+    #[serde(default)]
+    pub pacing: PacingStrategy,
     pub ads: Vec<ServedAd>,
 }
 
-/// Stateful ad-server owning campaign budgets, the O(1) active funded pool, and a pluggable
-/// [`AdsRanker`] strategy.
+/// Stateful ad-server owning campaign budgets, the O(1) active funded pool, and explicit
+/// ranking, scoring, and pacing strategies.
 pub struct AdServer {
     config: AdServerConfig,
     campaigns: Vec<CampaignState>,
     active_indices: Vec<usize>,
     active_pos: Vec<Option<usize>>,
+    paced_indices: Vec<usize>,
+    current_day: usize,
     total_budget_cents: u64,
     ranker: Box<dyn AdsRanker>,
     rng: ChaCha8Rng,
@@ -236,12 +295,15 @@ fn sample_campaign_budget(min_cents: u64, max_cents: u64, rng: &mut ChaCha8Rng) 
 
 impl AdServer {
     /// Initialize an [`AdServer`] from a schema v1 marketplace's advertiser catalogs using the
-    /// strategy specified in `config`.
+    /// ranking, scoring, and pacing strategies specified in `config`.
     pub fn from_marketplace(
         marketplace: &Marketplace,
         config: AdServerConfig,
     ) -> Result<Self, Error> {
-        let ranker = config.ranker.build(config.slate_size);
+        let ranker =
+            config
+                .ranker
+                .build_with_scoring(config.slate_size, config.scoring, config.cpc_cents);
         Self::with_ranker(marketplace, config, ranker)
     }
 
@@ -260,6 +322,7 @@ impl AdServer {
         if config.slate_size == 0 || ranker.slate_size() == 0 {
             return Err(invalid("slate_size must be positive"));
         }
+        validate_strategy(config.ranker, config.scoring, config.pacing).map_err(invalid)?;
         let (min_budget_cents, max_budget_cents) = config.effective_budget_bounds();
         if min_budget_cents > max_budget_cents {
             return Err(invalid(format!(
@@ -329,41 +392,96 @@ impl AdServer {
             }
         }
 
+        let paced_indices = Vec::with_capacity(campaigns.len());
+
         Ok(Self {
             config,
             campaigns,
             active_indices,
             active_pos,
+            paced_indices,
+            current_day: 1,
             total_budget_cents,
             ranker,
             rng,
         })
     }
 
-    /// Serve a set of ads from distinct funded campaigns for `user_id`.
+    /// Set the current 1-based simulated day (`1..=30`) used by daily pacing strategies.
+    pub fn set_day(&mut self, day: usize) -> Result<(), Error> {
+        if day == 0 || day > DAYS {
+            return Err(invalid(format!("day {day} out of range 1..={DAYS}")));
+        }
+        self.current_day = day;
+        Ok(())
+    }
+
+    /// Current 1-based simulated day (`1..=30`).
+    pub fn current_day(&self) -> usize {
+        self.current_day
+    }
+
+    /// Convenience helper setting `day` (`1..=30`) before serving ads for `user_id`.
+    pub fn serve_ads_for_day(&mut self, day: usize, user_id: &str) -> Result<AdResponse, Error> {
+        self.set_day(day)?;
+        Ok(self.serve_ads(user_id))
+    }
+
+    /// Serve a set of ads from distinct funded, paced-eligible campaigns for `user_id`.
     ///
     /// Guarantees:
     /// - Every returned ad belongs to a distinct campaign.
-    /// - Every returned ad's campaign currently has `remaining_budget_cents >= cpc_cents`.
-    /// - Returns at most `slate_size()` ads (20 by default under Strategy R1), or fewer if fewer
-    ///   campaigns currently have sufficient budget.
+    /// - Every returned ad's campaign currently has `remaining_budget_cents >= cpc_cents` and
+    ///   passed the configured [`PacingStrategy`] for `current_day()`.
+    /// - Returns at most `slate_size()` ads (20 by default), or fewer if fewer campaigns are
+    ///   currently eligible.
     pub fn serve_ads(&mut self, user_id: &str) -> AdResponse {
         let strategy = self.ranker.strategy();
+        let scoring = self.config.scoring;
+        let pacing = self.config.pacing;
         if self.active_indices.is_empty() {
             return AdResponse {
                 user_id: user_id.to_owned(),
                 strategy,
+                scoring,
+                pacing,
                 ads: Vec::new(),
             };
         }
 
         let max_ads = self.ranker.slate_size();
-        let selected = self.ranker.select_campaigns(
-            user_id,
-            &self.active_indices,
-            &self.campaigns,
-            &mut self.rng,
-        );
+        let selected = if pacing == PacingStrategy::P0 {
+            self.ranker.select_campaigns(
+                user_id,
+                &self.active_indices,
+                &self.campaigns,
+                &mut self.rng,
+            )
+        } else {
+            pacing.filter_eligible(
+                self.current_day,
+                DAYS,
+                &self.active_indices,
+                &self.campaigns,
+                &mut self.rng,
+                &mut self.paced_indices,
+            );
+            if self.paced_indices.is_empty() {
+                return AdResponse {
+                    user_id: user_id.to_owned(),
+                    strategy,
+                    scoring,
+                    pacing,
+                    ads: Vec::new(),
+                };
+            }
+            self.ranker.select_campaigns(
+                user_id,
+                &self.paced_indices,
+                &self.campaigns,
+                &mut self.rng,
+            )
+        };
 
         let mut seen = HashSet::with_capacity(selected.len().min(max_ads));
         let mut ads = Vec::with_capacity(selected.len().min(max_ads));
@@ -394,6 +512,8 @@ impl AdServer {
         AdResponse {
             user_id: user_id.to_owned(),
             strategy,
+            scoring,
+            pacing,
             ads,
         }
     }
@@ -472,6 +592,26 @@ impl AdServer {
     /// Active ranker strategy.
     pub fn strategy(&self) -> RankerStrategy {
         self.ranker.strategy()
+    }
+
+    /// Active candidate scoring strategy.
+    pub fn scoring(&self) -> ScoringStrategy {
+        self.config.scoring
+    }
+
+    /// Active budget pacing strategy.
+    pub fn pacing(&self) -> PacingStrategy {
+        self.config.pacing
+    }
+
+    /// Explicit 3-axis strategy manifest for this server instance.
+    pub fn strategy_profile(&self) -> StrategyProfile {
+        StrategyProfile::new(
+            self.ranker.strategy(),
+            self.config.scoring,
+            self.config.pacing,
+            self.ranker.slate_size(),
+        )
     }
 
     /// Configured maximum slate size per request.
@@ -697,14 +837,95 @@ mod tests {
     }
 
     #[test]
+    fn p1_even_daily_pacing_caps_day1_spend_and_resumes_on_day2() {
+        let mut mp = generate_marketplace(42);
+        mp.advertisers.truncate(1); // 10 campaigns
+        let mut server = AdServer::from_marketplace(
+            &mp,
+            AdServerConfig {
+                seed: 42,
+                campaign_budget_cents: Some(3_000), // $30 total => $1/day allowance
+                cpc_cents: 100,
+                ranker: RankerStrategy::R1,
+                scoring: crate::ScoringStrategy::S0,
+                pacing: crate::PacingStrategy::P1,
+                slate_size: 10,
+                ..AdServerConfig::default()
+            },
+        )
+        .unwrap();
+
+        let resp1 = server.serve_ads_for_day(1, "user-0001").unwrap();
+        assert_eq!(resp1.ads.len(), 10);
+        assert_eq!(resp1.pacing, crate::PacingStrategy::P1);
+        for ad in &resp1.ads {
+            server.record_impression(1, ad.campaign_index, true).unwrap();
+        }
+        // All 10 campaigns hit Day 1 cap ($1.00 = 100 cents), so Day 1 serves 0 more ads.
+        let resp1_after = server.serve_ads_for_day(1, "user-0001").unwrap();
+        assert!(resp1_after.ads.is_empty());
+
+        // Day 2 unlocks the next $1.00 allowance for all 10 campaigns.
+        let resp2 = server.serve_ads_for_day(2, "user-0001").unwrap();
+        assert_eq!(resp2.ads.len(), 10);
+    }
+
+    #[test]
+    fn p2_smooth_pacing_throttles_spent_campaigns_and_unlocks_on_day30() {
+        let mut mp = generate_marketplace(42);
+        mp.advertisers.truncate(1); // 10 campaigns
+        let mut server = AdServer::from_marketplace(
+            &mp,
+            AdServerConfig {
+                seed: 42,
+                campaign_budget_cents: Some(3_000), // $30 total => $1/day target on Day 1
+                cpc_cents: 100,
+                ranker: RankerStrategy::R2,
+                scoring: crate::ScoringStrategy::S1,
+                pacing: crate::PacingStrategy::P2,
+                slate_size: 10,
+                ..AdServerConfig::default()
+            },
+        )
+        .unwrap();
+
+        // Spend $1 (100% of Day 1 daily target) on all 10 campaigns.
+        for idx in 0..10 {
+            server.record_impression(1, idx, true).unwrap();
+        }
+        assert!(server.serve_ads_for_day(1, "user-0001").unwrap().ads.is_empty());
+        // Day 30 unlocks all remaining budget regardless of daily spend.
+        let day30 = server.serve_ads_for_day(30, "user-0001").unwrap();
+        assert_eq!(day30.ads.len(), 10);
+    }
+
+    #[test]
+    fn rejects_incompatible_r1_with_non_uniform_scoring() {
+        let mp = generate_marketplace(42);
+        let err = AdServer::from_marketplace(
+            &mp,
+            AdServerConfig {
+                ranker: RankerStrategy::R1,
+                scoring: crate::ScoringStrategy::S1,
+                ..AdServerConfig::default()
+            },
+        );
+        assert!(err.is_err());
+    }
+
+    #[test]
     fn spec_matches_constants_and_round_trips_json() {
         let spec = ad_server_spec();
         assert_eq!(spec.crate_name, "ad-server");
         assert_eq!(spec.default_min_campaign_budget_cents, 100_000);
         assert_eq!(spec.default_max_campaign_budget_cents, 1_000_000);
         assert_eq!(spec.default_ranker, RankerStrategy::R1);
+        assert_eq!(spec.default_scoring, crate::ScoringStrategy::S0);
+        assert_eq!(spec.default_pacing, crate::PacingStrategy::P0);
         assert_eq!(spec.default_slate_size, 20);
-        assert_eq!(spec.supported_rankers.len(), 2);
+        assert_eq!(spec.supported_rankers.len(), 3);
+        assert_eq!(spec.supported_scorers.len(), 4);
+        assert_eq!(spec.supported_pacers.len(), 3);
         let json = serde_json::to_string(&spec).unwrap();
         let parsed: crate::AdServerSpec = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, spec);

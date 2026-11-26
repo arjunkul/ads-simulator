@@ -9,7 +9,10 @@ use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 
-use ad_server::{AdResponse, AdServer, AdServerConfig, R1_SLATE_SIZE, RankerStrategy};
+use ad_server::{
+    AdResponse, AdServer, AdServerConfig, DEFAULT_PACING, PacingStrategy, R1_SLATE_SIZE,
+    RankerStrategy, ScoringStrategy,
+};
 use ads_simulator::{DEFAULT_SEED as DEFAULT_MARKETPLACE_SEED, generate_marketplace};
 use serde::{Deserialize, Deserializer, Serialize};
 use sim_agent::{
@@ -56,12 +59,16 @@ fn load_analysis_for_sim_report(sim_report: &Path) -> Option<SimulationAnalysis>
     None
 }
 
+#[allow(clippy::too_many_arguments)]
 fn sample_ad_server(
     user_id: &str,
     marketplace_seed: i64,
     seed: u64,
     campaign_budget_cents: Option<u64>,
     cpc_cents: u64,
+    ranker: RankerStrategy,
+    scoring: ScoringStrategy,
+    pacing: PacingStrategy,
     slate_size: usize,
 ) -> Result<AdResponse, String> {
     if user_id.trim().is_empty() {
@@ -76,7 +83,9 @@ fn sample_ad_server(
             campaign_budget_min_cents: DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS,
             campaign_budget_max_cents: DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
             cpc_cents,
-            ranker: RankerStrategy::R1,
+            ranker,
+            scoring,
+            pacing,
             slate_size,
         },
     )
@@ -130,6 +139,9 @@ impl DashboardState {
             DEFAULT_SIM_SEED,
             None,
             DEFAULT_CPC_CENTS,
+            RankerStrategy::R1,
+            RankerStrategy::R1.default_scoring(),
+            DEFAULT_PACING,
             R1_SLATE_SIZE,
         )
         .map_err(io::Error::other)?;
@@ -442,6 +454,10 @@ struct SimRunRequest {
     #[serde(default)]
     ranker: Option<RankerStrategy>,
     #[serde(default)]
+    scoring: Option<ScoringStrategy>,
+    #[serde(default)]
+    pacing: Option<PacingStrategy>,
+    #[serde(default)]
     slate_size: Option<usize>,
 }
 
@@ -576,6 +592,9 @@ fn handle_ad_server_sample(
     let mut seed = DEFAULT_SIM_SEED;
     let mut budget: Option<u64> = None;
     let mut cpc = DEFAULT_CPC_CENTS;
+    let mut ranker = RankerStrategy::R1;
+    let mut scoring: Option<ScoringStrategy> = None;
+    let mut pacing = DEFAULT_PACING;
     let mut slate_size = R1_SLATE_SIZE;
 
     for (k, v) in pairs {
@@ -595,6 +614,18 @@ fn handle_ad_server_sample(
                 Ok(n) => cpc = n,
                 Err(_) => return HttpResponse::error(400, "Bad Request", "invalid cpc parameter"),
             },
+            "ranker" => match v.parse::<RankerStrategy>() {
+                Ok(r) => ranker = r,
+                Err(msg) => return HttpResponse::error(400, "Bad Request", &msg),
+            },
+            "scoring" => match v.parse::<ScoringStrategy>() {
+                Ok(s) => scoring = Some(s),
+                Err(msg) => return HttpResponse::error(400, "Bad Request", &msg),
+            },
+            "pacing" => match v.parse::<PacingStrategy>() {
+                Ok(p) => pacing = p,
+                Err(msg) => return HttpResponse::error(400, "Bad Request", &msg),
+            },
             "slate_size" => match v.parse::<usize>() {
                 Ok(n) => slate_size = n,
                 Err(_) => {
@@ -605,7 +636,18 @@ fn handle_ad_server_sample(
         }
     }
 
-    match sample_ad_server(&user_id, DEFAULT_MARKETPLACE_SEED, seed, budget, cpc, slate_size) {
+    let resolved_scoring = scoring.unwrap_or_else(|| ranker.default_scoring());
+    match sample_ad_server(
+        &user_id,
+        DEFAULT_MARKETPLACE_SEED,
+        seed,
+        budget,
+        cpc,
+        ranker,
+        resolved_scoring,
+        pacing,
+        slate_size,
+    ) {
         Ok(resp) => HttpResponse::json_value(200, "OK", &resp),
         Err(msg) => HttpResponse::error(400, "Bad Request", &msg),
     }
@@ -640,6 +682,8 @@ fn handle_sim_run(body: &[u8], state: &Arc<RwLock<DashboardState>>) -> HttpRespo
         Some(explicit) => explicit,
     };
     let ranker = parsed.ranker.unwrap_or(DEFAULT_RANKER);
+    let scoring = parsed.scoring.unwrap_or_else(|| ranker.default_scoring());
+    let pacing = parsed.pacing.unwrap_or(DEFAULT_PACING);
     let slate_size = parsed.slate_size.unwrap_or(DEFAULT_SLATE_SIZE);
 
     let config = AgentConfig {
@@ -652,6 +696,8 @@ fn handle_sim_run(body: &[u8], state: &Arc<RwLock<DashboardState>>) -> HttpRespo
         cpc_cents,
         impressions,
         ranker,
+        scoring,
+        pacing,
         slate_size,
     };
 

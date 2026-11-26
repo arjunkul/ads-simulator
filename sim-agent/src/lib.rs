@@ -6,17 +6,17 @@ pub mod plot;
 
 use serde::{Deserialize, Serialize};
 
-pub use ad_server::{R1_SLATE_SIZE, RankerStrategy};
+pub use ad_server::{PacingStrategy, R1_SLATE_SIZE, RankerStrategy, ScoringStrategy, StrategyProfile};
 pub use agent::{
     ANALYSIS_JSON_FILENAME, AgentConfig, BUDGET_PLOT_SVG_FILENAME, BudgetSummary,
     BudgetTimeSeries, CURRENCY, DAYS, DEFAULT_CPC_CENTS, DEFAULT_IMPRESSIONS,
     DEFAULT_MARKETPLACE_SEED, DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
-    DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_OUTPUT_DIR, DEFAULT_RANKER, DEFAULT_SEED,
-    DEFAULT_SLATE_SIZE, DailyBudgetPoint, Error, RunArtifacts, RunResult, SCHEMA_VERSION,
-    SIMULATION_REPORT_FILENAME, TIMESERIES_CSV_FILENAME, TIMESERIES_JSON_FILENAME,
-    TimeSeriesConfig, audit_report, build_budget_timeseries, export_artifacts,
-    load_timeseries_from_path, render_timeseries_csv, run_and_export, run_simulation,
-    timeseries_from_owned_report,
+    DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_OUTPUT_DIR, DEFAULT_PACING, DEFAULT_RANKER,
+    DEFAULT_SCORING, DEFAULT_SEED, DEFAULT_SLATE_SIZE, DailyBudgetPoint, Error, RunArtifacts,
+    RunResult, SCHEMA_VERSION, SIMULATION_REPORT_FILENAME, TIMESERIES_CSV_FILENAME,
+    TIMESERIES_JSON_FILENAME, TimeSeriesConfig, audit_report, build_budget_timeseries,
+    export_artifacts, load_timeseries_from_path, render_timeseries_csv, run_and_export,
+    run_simulation, timeseries_from_owned_report,
 };
 pub use plot::render_budget_svg;
 pub use simulation_analyzer::{SimulationAnalysis, analyze_report, render_text_summary};
@@ -37,6 +37,10 @@ pub struct SimAgentSpec {
     pub default_cpc_cents: u64,
     pub default_impressions: u64,
     pub default_ranker: RankerStrategy,
+    #[serde(default)]
+    pub default_scoring: ScoringStrategy,
+    #[serde(default)]
+    pub default_pacing: PacingStrategy,
     pub default_slate_size: usize,
     pub default_output_dir: String,
     pub output_files: Vec<String>,
@@ -61,6 +65,8 @@ pub fn sim_agent_spec() -> SimAgentSpec {
         default_cpc_cents: DEFAULT_CPC_CENTS,
         default_impressions: DEFAULT_IMPRESSIONS,
         default_ranker: DEFAULT_RANKER,
+        default_scoring: DEFAULT_SCORING,
+        default_pacing: DEFAULT_PACING,
         default_slate_size: DEFAULT_SLATE_SIZE,
         default_output_dir: DEFAULT_OUTPUT_DIR.into(),
         output_files: vec![
@@ -82,6 +88,8 @@ pub fn sim_agent_spec() -> SimAgentSpec {
             "--impressions".into(),
             "--no-impression-target".into(),
             "--ranker".into(),
+            "--scoring".into(),
+            "--pacing".into(),
             "--slate-size".into(),
         ],
         ledger_invariants: vec![
@@ -105,9 +113,10 @@ mod tests {
     use crate::{
         ANALYSIS_JSON_FILENAME, BUDGET_PLOT_SVG_FILENAME, CURRENCY, DAYS, DEFAULT_CPC_CENTS,
         DEFAULT_IMPRESSIONS, DEFAULT_MARKETPLACE_SEED, DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
-        DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_OUTPUT_DIR, DEFAULT_RANKER, DEFAULT_SEED,
-        DEFAULT_SLATE_SIZE, SCHEMA_VERSION, SIMULATION_REPORT_FILENAME, SimAgentSpec,
-        TIMESERIES_CSV_FILENAME, TIMESERIES_JSON_FILENAME, sim_agent_spec,
+        DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_OUTPUT_DIR, DEFAULT_PACING, DEFAULT_RANKER,
+        DEFAULT_SCORING, DEFAULT_SEED, DEFAULT_SLATE_SIZE, SCHEMA_VERSION,
+        SIMULATION_REPORT_FILENAME, SimAgentSpec, TIMESERIES_CSV_FILENAME,
+        TIMESERIES_JSON_FILENAME, sim_agent_spec,
     };
 
     #[test]
@@ -132,6 +141,8 @@ mod tests {
         assert_eq!(spec.default_cpc_cents, DEFAULT_CPC_CENTS);
         assert_eq!(spec.default_impressions, DEFAULT_IMPRESSIONS);
         assert_eq!(spec.default_ranker, DEFAULT_RANKER);
+        assert_eq!(spec.default_scoring, DEFAULT_SCORING);
+        assert_eq!(spec.default_pacing, DEFAULT_PACING);
         assert_eq!(spec.default_slate_size, DEFAULT_SLATE_SIZE);
         assert_eq!(spec.default_output_dir, DEFAULT_OUTPUT_DIR);
         assert_eq!(
@@ -144,7 +155,7 @@ mod tests {
                 ANALYSIS_JSON_FILENAME,
             ]
         );
-        assert_eq!(spec.cli_flags.len(), 12);
+        assert_eq!(spec.cli_flags.len(), 14);
         assert_eq!(spec.ledger_invariants.len(), 5);
         assert_eq!(spec.plot_panels.len(), 3);
 

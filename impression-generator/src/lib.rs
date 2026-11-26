@@ -172,6 +172,7 @@ impl ImpressionGenerator {
                 self.config.days
             )));
         }
+        ad_server.set_day(day)?;
 
         let quota = self.daily_quota(day);
         let mut stats = DayGenerationStats {

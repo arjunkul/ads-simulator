@@ -7,7 +7,9 @@ use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Write as _};
 use std::path::{Path, PathBuf};
 
-use ad_server::{R1_SLATE_SIZE, RankerStrategy};
+use ad_server::{
+    PacingStrategy, R1_SLATE_SIZE, RankerStrategy, ScoringStrategy, StrategyProfile,
+};
 use ads_marketplace_simulation::{Activity, Config, OwnedReport, Report};
 use ads_simulator::{Marketplace, generate_marketplace};
 use serde::{Deserialize, Serialize};
@@ -36,6 +38,10 @@ pub const DEFAULT_CPC_CENTS: u64 = ads_marketplace_simulation::DEFAULT_CPC_CENTS
 pub const DEFAULT_IMPRESSIONS: u64 = 1_000_000;
 /// Default ads-ranker strategy (`R1`).
 pub const DEFAULT_RANKER: RankerStrategy = ads_marketplace_simulation::DEFAULT_RANKER;
+/// Default candidate scoring strategy (`S0` = Uniform).
+pub const DEFAULT_SCORING: ScoringStrategy = ads_marketplace_simulation::DEFAULT_SCORING;
+/// Default budget pacing strategy (`P0` = Unpaced ASAP).
+pub const DEFAULT_PACING: PacingStrategy = ads_marketplace_simulation::DEFAULT_PACING;
 /// Default ad-server slate size (`20` distinct funded campaigns per request).
 pub const DEFAULT_SLATE_SIZE: usize = R1_SLATE_SIZE;
 /// Default artifact output directory (`"output/sim-agent"`).
@@ -91,6 +97,12 @@ pub struct AgentConfig {
     /// Ads-ranker strategy used by the ad-server (default: `R1`).
     #[serde(default)]
     pub ranker: RankerStrategy,
+    /// Candidate scoring strategy used by the ad-server (default: `S0`).
+    #[serde(default)]
+    pub scoring: ScoringStrategy,
+    /// Budget pacing strategy used by the ad-server (default: `P0`).
+    #[serde(default)]
+    pub pacing: PacingStrategy,
     /// Maximum distinct funded campaigns served per ad-server request (default: `20`).
     #[serde(default = "default_slate_size")]
     pub slate_size: usize,
@@ -108,6 +120,8 @@ impl Default for AgentConfig {
             cpc_cents: DEFAULT_CPC_CENTS,
             impressions: Some(DEFAULT_IMPRESSIONS),
             ranker: DEFAULT_RANKER,
+            scoring: DEFAULT_SCORING,
+            pacing: DEFAULT_PACING,
             slate_size: DEFAULT_SLATE_SIZE,
         }
     }
@@ -124,6 +138,8 @@ impl AgentConfig {
             cpc_cents: self.cpc_cents,
             impressions: self.impressions,
             ranker: self.ranker,
+            scoring: self.scoring,
+            pacing: self.pacing,
             slate_size: self.slate_size,
         }
     }
@@ -147,6 +163,10 @@ pub struct TimeSeriesConfig {
     pub impressions: Option<u64>,
     #[serde(default)]
     pub ranker: RankerStrategy,
+    #[serde(default)]
+    pub scoring: ScoringStrategy,
+    #[serde(default)]
+    pub pacing: PacingStrategy,
     #[serde(default = "default_slate_size")]
     pub slate_size: usize,
 }
@@ -189,6 +209,8 @@ pub struct BudgetTimeSeries {
     pub schema_version: u32,
     pub currency: String,
     pub config: TimeSeriesConfig,
+    #[serde(default)]
+    pub strategy: StrategyProfile,
     pub summary: BudgetSummary,
     pub days: Vec<DailyBudgetPoint>,
 }
@@ -838,6 +860,13 @@ pub fn timeseries_from_owned_report(
         max_daily_spend_cents,
     };
 
+    let strategy = StrategyProfile::new(
+        report.config.ranker,
+        report.config.scoring,
+        report.config.pacing,
+        report.config.slate_size,
+    );
+
     Ok(BudgetTimeSeries {
         schema_version: report.schema_version,
         currency: report.currency.clone(),
@@ -850,8 +879,11 @@ pub fn timeseries_from_owned_report(
             cpc_cents: report.config.cpc_cents,
             impressions: report.config.impressions,
             ranker: report.config.ranker,
+            scoring: report.config.scoring,
+            pacing: report.config.pacing,
             slate_size: report.config.slate_size,
         },
+        strategy,
         summary,
         days,
     })

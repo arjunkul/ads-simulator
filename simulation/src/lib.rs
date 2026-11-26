@@ -7,9 +7,10 @@
 pub mod simulation;
 
 pub use ad_server::{
-    AdResponse, AdServer, AdServerConfig, AdServerSpec, AdsRanker, R1_SLATE_SIZE,
+    AdResponse, AdServer, AdServerConfig, AdServerSpec, AdsRanker, PacingStrategy, R1_SLATE_SIZE,
     R1RandomBudgetedRanker, R2_EPSILON, R2_SLATE_SIZE, R2_UCB_EXPLORATION_C, R2OnlineCtrRanker,
-    RankerStrategy, ServedAd, ad_server_spec,
+    R3_SLATE_SIZE, R3GreedyTopKRanker, RankerStrategy, ScoringStrategy, ServedAd, StrategyInfo,
+    StrategyProfile, ad_server_spec, validate_strategy,
 };
 pub use impression_generator::{
     DEFAULT_DAILY_REQUESTS, DayGenerationStats, GeneratedImpression, ImpressionGenerator,
@@ -17,9 +18,10 @@ pub use impression_generator::{
 };
 pub use simulation::{
     Activity, CAMPAIGNS_PER_ADVERTISER, Campaign, Config, DAYS, DEFAULT_CPC_CENTS,
-    DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS, DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_RANKER,
-    DEFAULT_SEED, DEFAULT_SLATE_SIZE, DailyActivity, Day, MAX_CLICK_PROBABILITY, OwnedCampaign,
-    OwnedReport, Report, SCHEMA_VERSION, SimulationSpec, Summary, run, simulation_spec,
+    DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS, DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_PACING,
+    DEFAULT_RANKER, DEFAULT_SCORING, DEFAULT_SEED, DEFAULT_SLATE_SIZE, DailyActivity, Day,
+    MAX_CLICK_PROBABILITY, OwnedCampaign, OwnedReport, Report, SCHEMA_VERSION, SimulationSpec,
+    Summary, run, simulation_spec,
 };
 
 #[cfg(test)]
@@ -28,9 +30,10 @@ mod tests {
 
     use crate::{
         CAMPAIGNS_PER_ADVERTISER, Config, DAYS, DEFAULT_CPC_CENTS, DEFAULT_DAILY_REQUESTS,
-        DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS, DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_RANKER,
-        DEFAULT_SEED, DEFAULT_SLATE_SIZE, MAX_CLICK_PROBABILITY, OwnedReport, RankerStrategy,
-        SCHEMA_VERSION, SimulationSpec, run, simulation_spec,
+        DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS, DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_PACING,
+        DEFAULT_RANKER, DEFAULT_SCORING, DEFAULT_SEED, DEFAULT_SLATE_SIZE, MAX_CLICK_PROBABILITY,
+        OwnedReport, PacingStrategy, RankerStrategy, SCHEMA_VERSION, ScoringStrategy,
+        SimulationSpec, run, simulation_spec,
     };
 
     #[test]
@@ -51,6 +54,8 @@ mod tests {
         );
         assert_eq!(spec.default_cpc_cents, DEFAULT_CPC_CENTS);
         assert_eq!(spec.default_ranker, DEFAULT_RANKER);
+        assert_eq!(spec.default_scoring, DEFAULT_SCORING);
+        assert_eq!(spec.default_pacing, DEFAULT_PACING);
         assert_eq!(spec.default_slate_size, DEFAULT_SLATE_SIZE);
         assert_eq!(spec.default_daily_requests, DEFAULT_DAILY_REQUESTS);
 
@@ -70,6 +75,8 @@ mod tests {
             cpc_cents: DEFAULT_CPC_CENTS,
             impressions: Some(1_000_000),
             ranker: RankerStrategy::R1,
+            scoring: ScoringStrategy::S0,
+            pacing: PacingStrategy::P0,
             slate_size: DEFAULT_SLATE_SIZE,
         };
         let report = run(&marketplace, config).unwrap();
@@ -77,6 +84,9 @@ mod tests {
         assert_eq!(report.schema_version, SCHEMA_VERSION);
         assert_eq!(report.currency, "USD");
         assert_eq!(report.config, config);
+        assert_eq!(report.strategy.ranking, RankerStrategy::R1);
+        assert_eq!(report.strategy.scoring, ScoringStrategy::S0);
+        assert_eq!(report.strategy.pacing, PacingStrategy::P0);
         assert_eq!(report.days.len(), DAYS);
         assert_eq!(report.campaigns.len(), 500);
         let summed_budget: u64 = report.campaigns.iter().map(|c| c.budget_cents).sum();

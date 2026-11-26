@@ -14,8 +14,9 @@ use ad_server::{
     CampaignState, DAYS as SERVER_DAYS, DEFAULT_CPC_CENTS as SERVER_DEFAULT_CPC,
     DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS as SERVER_DEFAULT_MAX_BUDGET,
     DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS as SERVER_DEFAULT_MIN_BUDGET,
-    DEFAULT_SEED as SERVER_DEFAULT_SEED, R1_SLATE_SIZE, RankerStrategy,
-    SCHEMA_VERSION as SERVER_SCHEMA_VERSION,
+    DEFAULT_PACING as SERVER_DEFAULT_PACING, DEFAULT_SCORING as SERVER_DEFAULT_SCORING,
+    DEFAULT_SEED as SERVER_DEFAULT_SEED, PacingStrategy, R1_SLATE_SIZE, RankerStrategy,
+    SCHEMA_VERSION as SERVER_SCHEMA_VERSION, ScoringStrategy, StrategyProfile,
 };
 use ads_simulator::{Item, Marketplace, User, score_preference};
 use impression_generator::{
@@ -34,6 +35,8 @@ pub const DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS: u64 = SERVER_DEFAULT_MIN_BUDGET;
 pub const DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS: u64 = SERVER_DEFAULT_MAX_BUDGET;
 pub const DEFAULT_CPC_CENTS: u64 = SERVER_DEFAULT_CPC;
 pub const DEFAULT_RANKER: RankerStrategy = RankerStrategy::R1;
+pub const DEFAULT_SCORING: ScoringStrategy = SERVER_DEFAULT_SCORING;
+pub const DEFAULT_PACING: PacingStrategy = SERVER_DEFAULT_PACING;
 pub const DEFAULT_SLATE_SIZE: usize = R1_SLATE_SIZE;
 pub const CLICK_RNG_STREAM: u64 = 2;
 
@@ -60,6 +63,10 @@ pub struct SimulationSpec {
     pub default_max_campaign_budget_cents: u64,
     pub default_cpc_cents: u64,
     pub default_ranker: RankerStrategy,
+    #[serde(default)]
+    pub default_scoring: ScoringStrategy,
+    #[serde(default)]
+    pub default_pacing: PacingStrategy,
     pub default_slate_size: usize,
     pub default_daily_requests: usize,
 }
@@ -76,6 +83,8 @@ pub const fn simulation_spec() -> SimulationSpec {
         default_max_campaign_budget_cents: DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
         default_cpc_cents: DEFAULT_CPC_CENTS,
         default_ranker: DEFAULT_RANKER,
+        default_scoring: DEFAULT_SCORING,
+        default_pacing: DEFAULT_PACING,
         default_slate_size: DEFAULT_SLATE_SIZE,
         default_daily_requests: DEFAULT_DAILY_REQUESTS,
     }
@@ -96,8 +105,19 @@ pub struct Config {
     pub impressions: Option<u64>,
     #[serde(default)]
     pub ranker: RankerStrategy,
+    #[serde(default)]
+    pub scoring: ScoringStrategy,
+    #[serde(default)]
+    pub pacing: PacingStrategy,
     #[serde(default = "default_slate_size")]
     pub slate_size: usize,
+}
+
+impl Config {
+    /// Return the explicit 3-axis [`StrategyProfile`] specified by this configuration.
+    pub fn strategy_profile(&self) -> StrategyProfile {
+        StrategyProfile::new(self.ranker, self.scoring, self.pacing, self.slate_size)
+    }
 }
 
 impl Default for Config {
@@ -110,6 +130,8 @@ impl Default for Config {
             cpc_cents: DEFAULT_CPC_CENTS,
             impressions: None,
             ranker: DEFAULT_RANKER,
+            scoring: DEFAULT_SCORING,
+            pacing: DEFAULT_PACING,
             slate_size: DEFAULT_SLATE_SIZE,
         }
     }
@@ -234,6 +256,7 @@ pub struct Report<'a> {
     pub schema_version: u32,
     pub currency: &'a str,
     pub config: Config,
+    pub strategy: StrategyProfile,
     pub summary: Summary,
     pub days: Vec<Day>,
     pub campaigns: Vec<Campaign<'a>>,
@@ -244,6 +267,8 @@ pub struct OwnedReport {
     pub schema_version: u32,
     pub currency: String,
     pub config: Config,
+    #[serde(default)]
+    pub strategy: StrategyProfile,
     pub summary: Summary,
     pub days: Vec<Day>,
     pub campaigns: Vec<OwnedCampaign>,
@@ -265,6 +290,7 @@ impl From<&Report<'_>> for OwnedReport {
             schema_version: report.schema_version,
             currency: report.currency.to_owned(),
             config: report.config,
+            strategy: report.strategy.clone(),
             summary: report.summary,
             days: report.days.clone(),
             campaigns: report.campaigns.iter().map(OwnedCampaign::from).collect(),
@@ -278,6 +304,7 @@ impl From<Report<'_>> for OwnedReport {
             schema_version: report.schema_version,
             currency: report.currency.to_owned(),
             config: report.config,
+            strategy: report.strategy,
             summary: report.summary,
             days: report.days,
             campaigns: report
@@ -388,10 +415,13 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
             campaign_budget_max_cents: config.campaign_budget_max_cents,
             cpc_cents: config.cpc_cents,
             ranker: config.ranker,
+            scoring: config.scoring,
+            pacing: config.pacing,
             slate_size: config.slate_size,
         },
     )?;
     let budget_cents = ad_server.total_budget_cents();
+    let strategy = ad_server.strategy_profile();
 
     let mut impression_generator = ImpressionGenerator::new(
         user_ids,
@@ -455,6 +485,7 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
         schema_version: SCHEMA_VERSION,
         currency: &marketplace.currency,
         config,
+        strategy,
         summary: Summary {
             budget_cents,
             remaining_budget_cents: budget_cents - totals.spend_cents,
@@ -473,7 +504,7 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
 mod tests {
     use std::collections::{HashMap, HashSet};
 
-    use ad_server::{R1_SLATE_SIZE, RankerStrategy};
+    use ad_server::{PacingStrategy, R1_SLATE_SIZE, RankerStrategy, ScoringStrategy};
     use ads_simulator::generate_marketplace;
 
     use super::{
@@ -574,6 +605,8 @@ mod tests {
             cpc_cents: 100,
             impressions: Some(1_000_000),
             ranker: RankerStrategy::R1,
+            scoring: ScoringStrategy::S0,
+            pacing: PacingStrategy::P0,
             slate_size: R1_SLATE_SIZE,
         };
         let report = run(&marketplace, config).unwrap();
@@ -687,6 +720,8 @@ mod tests {
                 cpc_cents: DEFAULT_CPC_CENTS,
                 impressions: None,
                 ranker: RankerStrategy::R1,
+                scoring: ScoringStrategy::S0,
+                pacing: PacingStrategy::P0,
                 slate_size: R1_SLATE_SIZE,
             }
         );

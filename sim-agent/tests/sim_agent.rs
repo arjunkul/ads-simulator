@@ -439,4 +439,93 @@ fn cli_error_cases_exit_nonzero() {
         .output()
         .unwrap();
     assert!(!blocked.status.success());
+
+    // Incompatible strategy combination: R1 (random) + S1 (UCB1 CTR).
+    let invalid_combo_dir = dir.path().join("invalid-combo");
+    let invalid_combo = Command::new(SIM_AGENT_BIN)
+        .args([
+            "--ranker",
+            "R1",
+            "--scoring",
+            "S1",
+            "--pacing",
+            "P0",
+            "--impressions",
+            "1000",
+            "--output-dir",
+        ])
+        .arg(&invalid_combo_dir)
+        .output()
+        .unwrap();
+    assert!(!invalid_combo.status.success());
+    assert!(
+        String::from_utf8_lossy(&invalid_combo.stderr).contains("incompatible strategy combination")
+    );
+    assert!(!invalid_combo_dir.exists());
+}
+
+#[test]
+fn cli_explicit_ranking_scoring_pacing_recorded_across_all_artifacts() {
+    let dir = TempDir::new().unwrap();
+    let out_dir = dir.path().join("r2-s2-p1");
+
+    let output = Command::new(SIM_AGENT_BIN)
+        .args([
+            "--ranker",
+            "R2",
+            "--scoring",
+            "S2",
+            "--pacing",
+            "P1",
+            "--impressions",
+            "6000",
+            "--output-dir",
+        ])
+        .arg(&out_dir)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Strategy    : Ranking R2"));
+    assert!(stdout.contains("Scoring S2"));
+    assert!(stdout.contains("Pacing P1"));
+
+    let sim_report: ads_marketplace_simulation::OwnedReport = serde_json::from_str(
+        &fs::read_to_string(out_dir.join(sim_agent::SIMULATION_REPORT_FILENAME)).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(sim_report.config.ranker, sim_agent::RankerStrategy::R2);
+    assert_eq!(sim_report.config.scoring, sim_agent::ScoringStrategy::S2);
+    assert_eq!(sim_report.config.pacing, sim_agent::PacingStrategy::P1);
+    assert_eq!(sim_report.strategy.ranking, sim_agent::RankerStrategy::R2);
+    assert_eq!(sim_report.strategy.scoring, sim_agent::ScoringStrategy::S2);
+    assert_eq!(sim_report.strategy.pacing, sim_agent::PacingStrategy::P1);
+
+    let ts: BudgetTimeSeries =
+        serde_json::from_str(&fs::read_to_string(out_dir.join(TIMESERIES_JSON_FILENAME)).unwrap())
+            .unwrap();
+    assert_eq!(ts.config.ranker, sim_agent::RankerStrategy::R2);
+    assert_eq!(ts.config.scoring, sim_agent::ScoringStrategy::S2);
+    assert_eq!(ts.config.pacing, sim_agent::PacingStrategy::P1);
+    assert_eq!(ts.strategy.scoring, sim_agent::ScoringStrategy::S2);
+    assert_eq!(ts.strategy.pacing, sim_agent::PacingStrategy::P1);
+
+    let analysis: sim_agent::SimulationAnalysis = serde_json::from_str(
+        &fs::read_to_string(out_dir.join(sim_agent::ANALYSIS_JSON_FILENAME)).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(analysis.ranker, sim_agent::RankerStrategy::R2);
+    assert_eq!(analysis.scoring, sim_agent::ScoringStrategy::S2);
+    assert_eq!(analysis.pacing, sim_agent::PacingStrategy::P1);
+    assert_eq!(analysis.strategy.ranking, sim_agent::RankerStrategy::R2);
+    assert_eq!(analysis.strategy.scoring, sim_agent::ScoringStrategy::S2);
+    assert_eq!(analysis.strategy.pacing, sim_agent::PacingStrategy::P1);
+
+    let svg = fs::read_to_string(out_dir.join(sim_agent::BUDGET_PLOT_SVG_FILENAME)).unwrap();
+    assert!(svg.contains("Ranker R2 / Scoring S2 / Pacing P1 (Slate 20)"));
 }

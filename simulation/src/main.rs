@@ -7,14 +7,14 @@ use std::{
 
 use ads_marketplace_simulation::{
     Config, DEFAULT_CPC_CENTS, DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
-    DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_RANKER, DEFAULT_SEED, DEFAULT_SLATE_SIZE,
-    RankerStrategy, Report, run,
+    DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_PACING, DEFAULT_RANKER, DEFAULT_SEED,
+    DEFAULT_SLATE_SIZE, PacingStrategy, RankerStrategy, Report, ScoringStrategy, run,
 };
 use clap::Parser;
 use tempfile::NamedTempFile;
 
 #[derive(Debug, Parser)]
-#[command(about = "Run a seeded 30-day CPC simulation via user-independent impression generator + ad-server")]
+#[command(about = "Run a seeded 30-day CPC simulation with explicit ranking, scoring, and pacing strategies")]
 struct Args {
     /// Schema v1 marketplace.json file.
     #[arg(long)]
@@ -39,9 +39,15 @@ struct Args {
     /// Exact number of impressions to deliver across the 30 days.
     #[arg(long)]
     impressions: Option<u64>,
-    /// Ads-ranker strategy used by the ad-server (e.g. R1).
+    /// Ads-ranker strategy (R1=random, R2=bandit top-K+eps-greedy, R3=greedy top-K).
     #[arg(long, default_value_t = DEFAULT_RANKER)]
     ranker: RankerStrategy,
+    /// Candidate scoring strategy (S0=uniform, S1=ucb1_ctr, S2=emp_ctr, S3=ecpm; defaults from --ranker).
+    #[arg(long)]
+    scoring: Option<ScoringStrategy>,
+    /// Budget pacing strategy (P0=unpaced, P1=even_daily, P2=smooth_prob).
+    #[arg(long, default_value_t = DEFAULT_PACING)]
+    pacing: PacingStrategy,
     /// Maximum number of distinct funded campaigns returned per ad-server request.
     #[arg(long, default_value_t = DEFAULT_SLATE_SIZE)]
     slate_size: usize,
@@ -53,6 +59,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn run_with_args(args: Args) -> Result<(), Box<dyn Error>> {
     let marketplace = serde_json::from_reader(BufReader::new(File::open(&args.marketplace)?))?;
+    let scoring = args
+        .scoring
+        .unwrap_or_else(|| args.ranker.default_scoring());
     let report = run(
         &marketplace,
         Config {
@@ -63,6 +72,8 @@ fn run_with_args(args: Args) -> Result<(), Box<dyn Error>> {
             cpc_cents: args.cpc_cents,
             impressions: args.impressions,
             ranker: args.ranker,
+            scoring,
+            pacing: args.pacing,
             slate_size: args.slate_size,
         },
     )?;
@@ -117,8 +128,8 @@ mod tests {
 
     use ads_marketplace_simulation::{
         Config, DAYS, DEFAULT_CPC_CENTS, DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
-        DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_RANKER, DEFAULT_SEED, DEFAULT_SLATE_SIZE,
-        OwnedReport, run,
+        DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_PACING, DEFAULT_RANKER, DEFAULT_SEED,
+        DEFAULT_SLATE_SIZE, OwnedReport, run,
     };
     use ads_simulator::generate_marketplace;
     use clap::Parser;
@@ -149,6 +160,8 @@ mod tests {
         assert_eq!(args.cpc_cents, DEFAULT_CPC_CENTS);
         assert_eq!(args.impressions, None);
         assert_eq!(args.ranker, DEFAULT_RANKER);
+        assert_eq!(args.scoring, None);
+        assert_eq!(args.pacing, DEFAULT_PACING);
         assert_eq!(args.slate_size, DEFAULT_SLATE_SIZE);
     }
 
