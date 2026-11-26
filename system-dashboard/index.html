@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Ads-Simulator — System Strategy Dashboard</title>
+  <title>Ads-Simulator — System Strategy Dashboard (100M Impressions)</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -18,6 +18,8 @@
       --success-bg: rgba(52, 211, 153, 0.14);
       --warning: #fbbf24;
       --warning-bg: rgba(251, 191, 36, 0.14);
+      --r1: #94a3b8;
+      --r2: #34d399;
     }
     @media (prefers-color-scheme: light) {
       :root {
@@ -33,6 +35,8 @@
         --success-bg: rgba(5, 150, 105, 0.10);
         --warning: #d97706;
         --warning-bg: rgba(217, 119, 6, 0.10);
+        --r1: #64748b;
+        --r2: #059669;
       }
     }
     * { box-sizing: border-box; }
@@ -44,33 +48,38 @@
       color: var(--text);
       line-height: 1.5;
     }
-    .container { max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+    .container { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
     header {
       display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px;
       padding-bottom: 16px; border-bottom: 1px solid var(--border);
     }
     h1 { margin: 0; font-size: 1.5rem; letter-spacing: -0.02em; }
     .subtitle { margin: 4px 0 0; color: var(--muted); font-size: 0.9rem; }
-    .controls { display: flex; flex-wrap: wrap; gap: 8px; }
+    .run-pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: var(--primary-bg); border: 1px solid var(--primary); color: var(--primary);
+      padding: 6px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 600;
+    }
+    .controls { display: flex; flex-wrap: wrap; gap: 6px; }
     .btn {
-      appearance: none; border: 1px solid var(--border); background: var(--surface); color: var(--text);
-      padding: 7px 12px; border-radius: 8px; font-size: 0.82rem; font-weight: 500; cursor: pointer;
+      appearance: none; border: 1px solid var(--border); background: var(--surface-alt); color: var(--text);
+      padding: 5px 11px; border-radius: 7px; font-size: 0.78rem; font-weight: 500; cursor: pointer;
       transition: border-color 120ms ease, background 120ms ease;
     }
     .btn:hover { border-color: var(--primary); }
     .btn.active { background: var(--primary-bg); border-color: var(--primary); color: var(--primary); }
-    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
     .card {
       background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px;
     }
-    .kpi-label { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .kpi-label { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
     .kpi-value { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 4px; }
     .kpi-sub { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
     .table-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
-    th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    th, td { text-align: left; padding: 11px 13px; border-bottom: 1px solid var(--border); vertical-align: top; }
     th {
-      font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+      font-size: 0.73rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
       background: var(--surface-alt); white-space: nowrap;
     }
     tbody tr { cursor: pointer; transition: background 120ms ease; }
@@ -78,14 +87,27 @@
     tbody tr.selected { background: var(--primary-bg); }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-variant-numeric: tabular-nums; }
     .badge {
-      display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.74rem; font-weight: 600;
+      display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.73rem; font-weight: 600;
     }
     .badge-primary { background: var(--primary-bg); color: var(--primary); }
     .badge-success { background: var(--success-bg); color: var(--success); }
     .badge-warning { background: var(--warning-bg); color: var(--warning); }
-    .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 12px; }
-    .detail-box { background: var(--surface-alt); border: 1px solid var(--border); border-radius: 10px; padding: 12px; font-size: 0.85rem; }
-    .detail-box h3 { margin: 0 0 6px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+    .chart-header {
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
+      margin-bottom: 12px;
+    }
+    .legend { display: flex; align-items: center; gap: 14px; font-size: 0.8rem; color: var(--muted); }
+    .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+    .swatch { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
+    .chart-readout {
+      font-size: 0.8rem; color: var(--muted); min-height: 20px; margin-top: 6px;
+      display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+    }
+    .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; margin-top: 12px; }
+    .detail-box { background: var(--surface-alt); border: 1px solid var(--border); border-radius: 10px; padding: 12px; font-size: 0.84rem; }
+    .detail-box h3 { margin: 0 0 6px; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+    .camp-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+    .camp-list li { display: flex; justify-content: space-between; gap: 8px; font-size: 0.78rem; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82em; }
     footer { font-size: 0.78rem; color: var(--muted); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
   </style>
@@ -95,13 +117,9 @@
     <header>
       <div>
         <h1>Ads-Simulator · System Strategy Dashboard</h1>
-        <p class="subtitle">Registered <code>ad-server</code> ranking strategies and 30-day benchmark results (500 campaigns · 50 advertisers · 1,000 shoppers · $1 CPC · Seed 42)</p>
+        <p class="subtitle">Registered <code>ad-server</code> ranking strategies — 30-day 100M-impression benchmark (500 campaigns · 50 advertisers · 1,000 shoppers · $1 CPC · Seed 42)</p>
       </div>
-      <div class="controls" role="group" aria-label="Benchmark scenario">
-        <button class="btn active" data-scenario="10m">10M Impr · $10k–$100k</button>
-        <button class="btn" data-scenario="1m-1x">1M Impr · $1k–$10k</button>
-        <button class="btn" data-scenario="1m-10x">1M Impr · $10k–$100k</button>
-      </div>
+      <span class="run-pill mono">100,000,000 Impr · $10k–$100k/camp · $27.99M Pool</span>
     </header>
 
     <section class="kpi-grid" id="kpi-strip"></section>
@@ -109,16 +127,16 @@
     <section class="card" style="padding: 0; overflow: hidden;">
       <div style="padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
         <strong>Ads-Ranker Strategies</strong>
-        <span style="font-size: 0.8rem; color: var(--muted);">Click any strategy row to inspect algorithm &amp; source details</span>
+        <span style="font-size: 0.8rem; color: var(--muted);">Click any strategy row to inspect ranking formula, delivery spread &amp; top campaigns</span>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
               <th>Strategy</th>
-              <th>Algorithm</th>
+              <th>Algorithm &amp; Params</th>
               <th>Signals Used</th>
-              <th>Slate Size</th>
+              <th>Slate</th>
               <th>Overall CTR</th>
               <th>CTR Lift vs R1</th>
               <th>30d Spend / Clicks</th>
@@ -126,6 +144,7 @@
               <th>Spend Gini</th>
               <th>Top-10% Share</th>
               <th>Budget Util.</th>
+              <th>Days Won</th>
             </tr>
           </thead>
           <tbody id="strategy-tbody"></tbody>
@@ -133,44 +152,85 @@
       </div>
     </section>
 
+    <section class="card">
+      <div class="chart-header">
+        <div>
+          <strong>30-Day Daily Trajectory (100M Impressions)</strong>
+          <div style="font-size:0.8rem;color:var(--muted);">R2 converges from 0.2202% (Day 1) to a 0.2514% late-month plateau (Days 16–30), winning all 30/30 days</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+          <div class="legend">
+            <span class="legend-item"><span class="swatch" style="background:var(--r2);"></span>R2 (UCB1 + ε)</span>
+            <span class="legend-item"><span class="swatch" style="background:var(--r1);"></span>R1 (Random)</span>
+          </div>
+          <div class="controls" role="group" aria-label="Chart metric">
+            <button class="btn active" data-metric="ctr">Daily CTR (%)</button>
+            <button class="btn" data-metric="spend">Daily Spend ($)</button>
+          </div>
+        </div>
+      </div>
+      <div id="chart-container" style="width:100%;"></div>
+      <div class="chart-readout mono" id="chart-readout">Hover over any day column to inspect exact R1 vs R2 values</div>
+    </section>
+
     <section class="card" id="detail-panel"></section>
 
     <footer>
-      <span>Source: <code>ad-server/src/ranker.rs</code> · <code>simulation-analyzer/src/lib.rs</code></span>
-      <span id="scenario-meta" class="mono"></span>
+      <span>Source: <code>ad-server/src/ranker.rs</code> · <code>simulation-analyzer/src/lib.rs</code> · Artifacts: <code>output/sim-agent-r{1,2}-100m/</code></span>
+      <span class="mono">5,000,010 requests · 20.00 ads/req · 0/500 exhausted</span>
     </footer>
   </div>
 
   <script>
-    const SCENARIOS = {
-      "10m": {
-        label: "10,000,000 impressions · $10k–$100k/campaign ($27,989,684 pool)",
-        impressions: "10,000,000",
-        budgetPool: "$27,989,684",
-        requests: "500,010",
-        metrics: {
-          R1: { ctr: 0.2027, spend: "$20,272.00", clicks: "20,272", ecpm: "$2.03", gini: "0.130", top10: "14.0%", util: "0.072%", zeroClick: 0, impRange: "19,565 – 20,391", daysWon: "2 / 30", topCamp: "advertiser-40-campaign-03 (19,993 impr, 65 clicks, 0.325% CTR)" },
-          R2: { ctr: 0.2264, spend: "$22,643.00", clicks: "22,643", ecpm: "$2.26", gini: "0.695", top10: "57.5%", util: "0.081%", zeroClick: 7, impRange: "2,228 – 291,807", daysWon: "28 / 30", topCamp: "advertiser-11-campaign-10 (291,807 impr, 812 clicks, 0.278% CTR)" }
-        }
-      },
-      "1m-1x": {
-        label: "1,000,000 impressions · $1k–$10k/campaign ($2,798,987 pool)",
-        impressions: "1,000,000",
-        budgetPool: "$2,798,987",
-        requests: "50,010",
-        metrics: {
-          R1: { ctr: 0.1984, spend: "$1,984.00", clicks: "1,984", ecpm: "$1.98", gini: "0.298", top10: "20.5%", util: "0.071%", zeroClick: 8, impRange: "1,868 – 2,152", daysWon: "9 / 30", topCamp: "advertiser-42-campaign-05 (1,952 impr, 14 clicks, 0.717% CTR)" },
-          R2: { ctr: 0.2105, spend: "$2,105.00", clicks: "2,105", ecpm: "$2.11", gini: "0.725", top10: "52.9%", util: "0.075%", zeroClick: 197, impRange: "445 – 22,182", daysWon: "21 / 30", topCamp: "advertiser-39-campaign-05 (22,182 impr, 73 clicks, 0.329% CTR)" }
-        }
-      },
-      "1m-10x": {
-        label: "1,000,000 impressions · $10k–$100k/campaign ($27,989,684 pool)",
-        impressions: "1,000,000",
-        budgetPool: "$27,989,684",
-        requests: "50,010",
-        metrics: {
-          R1: { ctr: 0.1984, spend: "$1,984.00", clicks: "1,984", ecpm: "$1.98", gini: "0.298", top10: "20.5%", util: "0.007%", zeroClick: 8, impRange: "1,868 – 2,152", daysWon: "9 / 30", topCamp: "advertiser-42-campaign-05 (1,952 impr, 14 clicks, 0.717% CTR)" },
-          R2: { ctr: 0.2105, spend: "$2,105.00", clicks: "2,105", ecpm: "$2.11", gini: "0.725", top10: "52.9%", util: "0.008%", zeroClick: 197, impRange: "445 – 22,182", daysWon: "21 / 30", topCamp: "advertiser-39-campaign-05 (22,182 impr, 73 clicks, 0.329% CTR)" }
+    const BENCHMARK = {
+      impressions: "100,000,000",
+      budgetPool: "$27,989,684.00",
+      requests: "5,000,010",
+      days: Array.from({ length: 30 }, (_, i) => i + 1),
+      metrics: {
+        R1: {
+          ctr: 0.2010,
+          spend: "$201,037.00",
+          clicks: "201,037",
+          ecpm: "$2.01",
+          gini: "0.094",
+          top10: "12.9%",
+          util: "0.72%",
+          exhausted: "0 / 500",
+          zeroClick: 0,
+          impRange: "198,915 – 201,271 (median 199,991, σ 416)",
+          maxUtil: "4.30% (advertiser-07-campaign-06)",
+          daysWon: "0 / 30",
+          runtime: "55s",
+          dailyCtr: [0.2046,0.1965,0.2007,0.2004,0.2006,0.1987,0.2005,0.1973,0.1998,0.2004,0.2011,0.2043,0.2002,0.2020,0.2005,0.2021,0.1999,0.1981,0.2016,0.2025,0.1999,0.2054,0.2032,0.2070,0.2023,0.1997,0.1993,0.1998,0.2011,0.2019],
+          dailySpend: [6820,6549,6691,6681,6687,6624,6684,6577,6659,6679,6704,6810,6672,6733,6682,6737,6663,6602,6721,6750,6662,6847,6772,6901,6742,6655,6642,6659,6702,6730],
+          topCamps: [
+            { id: "advertiser-41-campaign-10", cat: "cat-008", stat: "200,223 impr · 573 clicks (0.286%)" },
+            { id: "advertiser-31-campaign-05", cat: "cat-001", stat: "199,952 impr · 570 clicks (0.285%)" },
+            { id: "advertiser-10-campaign-08", cat: "cat-094", stat: "200,457 impr · 550 clicks (0.274%)" }
+          ]
+        },
+        R2: {
+          ctr: 0.2463,
+          spend: "$246,279.00",
+          clicks: "246,279",
+          ecpm: "$2.46",
+          gini: "0.837",
+          top10: "82.7%",
+          util: "0.88%",
+          exhausted: "0 / 500",
+          zeroClick: 0,
+          impRange: "20,651 – 4,837,518 (median 36,321, σ 698,397)",
+          maxUtil: "66.76% (advertiser-40-campaign-06, $9,532 / $14,278)",
+          daysWon: "30 / 30",
+          runtime: "200s",
+          dailyCtr: [0.2202,0.2296,0.2337,0.2416,0.2388,0.2359,0.2463,0.2437,0.2474,0.2462,0.2483,0.2479,0.2441,0.2482,0.2496,0.2500,0.2506,0.2516,0.2509,0.2482,0.2480,0.2530,0.2480,0.2544,0.2529,0.2512,0.2494,0.2527,0.2533,0.2528],
+          dailySpend: [7340,7655,7791,8054,7959,7862,8209,8123,8247,8207,8278,8262,8136,8273,8319,8333,8352,8388,8364,8272,8268,8433,8267,8481,8430,8373,8313,8422,8443,8425],
+          topCamps: [
+            { id: "advertiser-41-campaign-10", cat: "cat-008", stat: "4,781,298 impr · 12,873 clicks (0.269%)" },
+            { id: "advertiser-20-campaign-03", cat: "cat-094", stat: "4,837,518 impr · 12,641 clicks (0.261%)" },
+            { id: "advertiser-04-campaign-05", cat: "cat-036", stat: "4,834,110 impr · 12,458 clicks (0.258%)" }
+          ]
         }
       }
     };
@@ -180,69 +240,64 @@
         id: "R1",
         name: "Random Budgeted Selector",
         struct: "R1RandomBudgetedRanker",
-        status: "Baseline",
         slateSize: 20,
         signals: "Funded eligibility only (remaining_budget >= CPC)",
         formula: "Uniform sample without replacement of min(20, |eligible|) campaigns + Fisher-Yates shuffle",
-        params: "slate_size = 20, RNG = ChaCha8Rng (Stream 0)",
+        params: "slate_size = 20, ChaCha8Rng (Stream 0)",
         source: "ad-server/src/ranker.rs :: R1RandomBudgetedRanker",
-        notes: "Unbiased uniform baseline. Every active campaign receives roughly equal impression volume (~2,000 at 1M / ~20,000 at 10M), yielding ~0.20% CTR (5% category match x 4% click rate)."
+        notes: "Unbiased uniform baseline. At 100M impressions, every campaign receives ~200,000 impressions (σ = 416), converging tightly to the 0.201% population-average CTR (5% category match × 4% click rate) with minimal spend dispersion (Gini 0.094)."
       },
       {
         id: "R2",
         name: "Online CTR Learner (UCB1 + ε-greedy)",
         struct: "R2OnlineCtrRanker",
-        status: "Active",
         slateSize: 20,
         signals: "Funded eligibility + live campaign clicks & impressions",
-        formula: "score(i) = (clicks_i / imp_i) + c * sqrt(ln(T) / imp_i), with cold-start priority & ε-greedy explore slots",
-        params: "slate_size = 20, ε = 0.10 (10% explore), UCB1 c = 0.02",
+        formula: "score(i) = (clicks_i / imp_i) + 0.02 * sqrt(ln(T) / imp_i), cold-start priority & 10% ε-greedy explore",
+        params: "slate_size = 20, ε = 0.10, UCB1 c = 0.02",
         source: "ad-server/src/ranker.rs :: R2OnlineCtrRanker",
-        notes: "User-blind multi-armed bandit. Learns population-popular categories purely from click feedback, lifting CTR +6.1% at 1M impressions and +11.7% at 10M impressions while strongly concentrating delivery on top winners."
+        notes: "User-blind multi-armed bandit. At 100M impressions it locks onto the highest-popularity categories (cat-008, cat-094, cat-036), reaching 0.2463% overall CTR (+22.5% lift) and saturating the ~0.252% user-blind asymptotic ceiling by Day 16 (Days 16–30 avg: 0.2514%)."
       }
     ];
 
-    let activeScenario = "10m";
     let selectedId = "R2";
+    let chartMetric = "ctr";
 
     function render() {
-      const sc = SCENARIOS[activeScenario];
-      const r1m = sc.metrics.R1;
-      const r2m = sc.metrics.R2;
+      const r1m = BENCHMARK.metrics.R1;
+      const r2m = BENCHMARK.metrics.R2;
       const liftPct = ((r2m.ctr / r1m.ctr) - 1) * 100;
-
-      document.getElementById("scenario-meta").textContent = sc.label;
 
       document.getElementById("kpi-strip").innerHTML = `
         <div class="card">
           <div class="kpi-label">Registered Strategies</div>
           <div class="kpi-value">${STRATEGIES.length} Active</div>
-          <div class="kpi-sub">R1 (Baseline) · R2 (UCB1 + ε)</div>
+          <div class="kpi-sub">R1 (Baseline · ${r1m.runtime}) · R2 (UCB1+ε · ${r2m.runtime})</div>
         </div>
         <div class="card">
           <div class="kpi-label">Best Overall CTR</div>
           <div class="kpi-value" style="color: var(--success);">${r2m.ctr.toFixed(4)}%</div>
-          <div class="kpi-sub">R2 (+${liftPct.toFixed(1)}% lift vs R1 ${r1m.ctr.toFixed(4)}%)</div>
+          <div class="kpi-sub">R2 (+${liftPct.toFixed(2)}% vs R1 ${r1m.ctr.toFixed(4)}% · Peak 0.2544%)</div>
         </div>
         <div class="card">
-          <div class="kpi-label">Scenario Volume</div>
-          <div class="kpi-value">${sc.impressions}</div>
-          <div class="kpi-sub">${sc.requests} requests · ${sc.budgetPool} pool</div>
+          <div class="kpi-label">30-Day Revenue Lift</div>
+          <div class="kpi-value">+$45,242</div>
+          <div class="kpi-sub">R2 $246,279 vs R1 $201,037 (0/500 exhausted)</div>
         </div>
         <div class="card">
           <div class="kpi-label">Concentration Shift</div>
           <div class="kpi-value">${r1m.gini} &rarr; ${r2m.gini}</div>
-          <div class="kpi-sub">Spend Gini (R1 uniform vs R2 bandit)</div>
+          <div class="kpi-sub">Spend Gini · Top-10% share ${r1m.top10} &rarr; ${r2m.top10}</div>
         </div>
       `;
 
       const tbody = document.getElementById("strategy-tbody");
       tbody.innerHTML = "";
       for (const s of STRATEGIES) {
-        const m = sc.metrics[s.id];
+        const m = BENCHMARK.metrics[s.id];
         const lift = s.id === "R1"
           ? `<span class="badge badge-warning">Baseline</span>`
-          : `<span class="badge badge-success">+${(((m.ctr / r1m.ctr) - 1) * 100).toFixed(1)}%</span>`;
+          : `<span class="badge badge-success">+${(((m.ctr / r1m.ctr) - 1) * 100).toFixed(2)}%</span>`;
         const tr = document.createElement("tr");
         if (s.id === selectedId) tr.className = "selected";
         tr.innerHTML = `
@@ -251,25 +306,26 @@
               <span class="badge badge-primary mono">${s.id}</span>
               <strong>${s.name}</strong>
             </div>
-            <div style="font-size:0.78rem;color:var(--muted);margin-top:2px;"><code>${s.struct}</code></div>
+            <div style="font-size:0.76rem;color:var(--muted);margin-top:2px;"><code>${s.struct}</code></div>
           </td>
           <td>${s.params}</td>
           <td>${s.signals}</td>
           <td class="mono">${s.slateSize}</td>
           <td class="mono"><strong>${m.ctr.toFixed(4)}%</strong></td>
           <td>${lift}</td>
-          <td class="mono">${m.spend}<div style="font-size:0.76rem;color:var(--muted);">${m.clicks} clicks</div></td>
+          <td class="mono">${m.spend}<div style="font-size:0.75rem;color:var(--muted);">${m.clicks} clicks</div></td>
           <td class="mono">${m.ecpm}</td>
           <td class="mono">${m.gini}</td>
           <td class="mono">${m.top10}</td>
           <td class="mono">${m.util}</td>
+          <td class="mono">${m.daysWon}</td>
         `;
         tr.addEventListener("click", () => { selectedId = s.id; render(); });
         tbody.appendChild(tr);
       }
 
       const sel = STRATEGIES.find((s) => s.id === selectedId);
-      const sm = sc.metrics[sel.id];
+      const sm = BENCHMARK.metrics[sel.id];
       document.getElementById("detail-panel").innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
           <div>
@@ -278,30 +334,82 @@
           </div>
           <code style="color:var(--muted);">${sel.source}</code>
         </div>
-        <p style="margin:10px 0 0;color:var(--muted);font-size:0.9rem;">${sel.notes}</p>
+        <p style="margin:10px 0 0;color:var(--muted);font-size:0.89rem;">${sel.notes}</p>
         <div class="detail-grid">
           <div class="detail-box">
             <h3>Ranking Formula</h3>
-            <div class="mono" style="font-size:0.8rem;">${sel.formula}</div>
+            <div class="mono" style="font-size:0.79rem;">${sel.formula}</div>
           </div>
           <div class="detail-box">
-            <h3>Delivery Distribution (${sc.impressions} Impr)</h3>
-            <div>Impressions / campaign: <strong class="mono">${sm.impRange}</strong></div>
-            <div>Zero-click campaigns: <strong class="mono">${sm.zeroClick} / 500</strong> · Days won: <strong class="mono">${sm.daysWon}</strong></div>
+            <h3>Delivery Distribution (100M Impr)</h3>
+            <div>Impr / campaign: <strong class="mono">${sm.impRange}</strong></div>
+            <div>Zero-click: <strong class="mono">${sm.zeroClick} / 500</strong> · Exhausted: <strong class="mono">${sm.exhausted}</strong></div>
+            <div>Max campaign util.: <strong class="mono">${sm.maxUtil}</strong></div>
           </div>
           <div class="detail-box">
-            <h3>Top-Performing Campaign</h3>
-            <div class="mono" style="font-size:0.8rem;">${sm.topCamp}</div>
+            <h3>Top 3 Campaigns by Spend</h3>
+            <ul class="camp-list mono">
+              ${sm.topCamps.map((c) => `<li><span>${c.id} (${c.cat})</span><span style="color:var(--muted);">${c.stat}</span></li>`).join("")}
+            </ul>
           </div>
         </div>
       `;
+
+      renderChart();
     }
 
-    document.querySelectorAll("[data-scenario]").forEach((btn) => {
+    function renderChart() {
+      const r1Arr = chartMetric === "ctr" ? BENCHMARK.metrics.R1.dailyCtr : BENCHMARK.metrics.R1.dailySpend;
+      const r2Arr = chartMetric === "ctr" ? BENCHMARK.metrics.R2.dailyCtr : BENCHMARK.metrics.R2.dailySpend;
+      const w = 960, h = 230, padL = 58, padR = 18, padT = 16, padB = 30;
+      const minV = chartMetric === "ctr" ? 0.19 : 6300;
+      const maxV = chartMetric === "ctr" ? 0.26 : 8700;
+      const x = (i) => padL + (i / 29) * (w - padL - padR);
+      const y = (v) => padT + (1 - (v - minV) / (maxV - minV)) * (h - padT - padB);
+      const pathOf = (arr) => arr.map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+      const ticks = chartMetric === "ctr" ? [0.19, 0.20, 0.22, 0.24, 0.26] : [6500, 7000, 7500, 8000, 8500];
+      const fmtTick = (t) => chartMetric === "ctr" ? `${t.toFixed(2)}%` : `$${(t / 1000).toFixed(1)}k`;
+
+      const svg = `
+        <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block;" role="img" aria-label="30-day R1 vs R2 trajectory">
+          ${ticks.map((t) => `
+            <line x1="${padL}" x2="${w - padR}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" stroke="var(--border)" stroke-dasharray="3 3" opacity="0.7" />
+            <text x="${padL - 8}" y="${(y(t) + 4).toFixed(1)}" text-anchor="end" fill="var(--muted)" font-size="11" font-family="ui-monospace,monospace">${fmtTick(t)}</text>
+          `).join("")}
+          ${[1, 5, 10, 15, 20, 25, 30].map((d) => `
+            <text x="${x(d - 1).toFixed(1)}" y="${h - 8}" text-anchor="middle" fill="var(--muted)" font-size="11" font-family="ui-monospace,monospace">Day ${d}</text>
+          `).join("")}
+          <path d="${pathOf(r1Arr)}" fill="none" stroke="var(--r1)" stroke-width="2.2" />
+          <path d="${pathOf(r2Arr)}" fill="none" stroke="var(--r2)" stroke-width="2.6" />
+          ${r2Arr.map((v, i) => `
+            <circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3" fill="var(--r2)" />
+            <circle cx="${x(i).toFixed(1)}" cy="${y(r1Arr[i]).toFixed(1)}" r="2.5" fill="var(--r1)" />
+            <rect x="${(x(i) - 14).toFixed(1)}" y="${padT}" width="28" height="${h - padT - padB}" fill="transparent" style="cursor:crosshair;" data-day-idx="${i}" />
+          `).join("")}
+        </svg>
+      `;
+      const container = document.getElementById("chart-container");
+      container.innerHTML = svg;
+      const readout = document.getElementById("chart-readout");
+      container.querySelectorAll("[data-day-idx]").forEach((rect) => {
+        rect.addEventListener("mouseenter", () => {
+          const i = Number(rect.dataset.dayIdx);
+          const v1 = r1Arr[i], v2 = r2Arr[i];
+          const lift = ((v2 / v1) - 1) * 100;
+          if (chartMetric === "ctr") {
+            readout.innerHTML = `<span>Day ${i + 1}: R2 <strong style="color:var(--r2);">${v2.toFixed(4)}%</strong> vs R1 <strong>${v1.toFixed(4)}%</strong></span><span style="color:var(--success);">+${lift.toFixed(2)}% daily CTR lift</span>`;
+          } else {
+            readout.innerHTML = `<span>Day ${i + 1}: R2 <strong style="color:var(--r2);">$${v2.toLocaleString()}</strong> vs R1 <strong>$${v1.toLocaleString()}</strong></span><span style="color:var(--success);">+$${(v2 - v1).toLocaleString()} (+${lift.toFixed(2)}%)</span>`;
+          }
+        });
+      });
+    }
+
+    document.querySelectorAll("[data-metric]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        activeScenario = btn.dataset.scenario;
-        document.querySelectorAll("[data-scenario]").forEach((b) => b.classList.toggle("active", b === btn));
-        render();
+        chartMetric = btn.dataset.metric;
+        document.querySelectorAll("[data-metric]").forEach((b) => b.classList.toggle("active", b === btn));
+        renderChart();
       });
     });
 
