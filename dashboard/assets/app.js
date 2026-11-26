@@ -155,8 +155,8 @@
 
     const lanes = [
       { id: "lane-mp", title: "1. ads-simulator", subtitle: "Marketplace & Preferences", x: 12, y: 14, w: 234, h: 616, color: "#38bdf8" },
-      { id: "lane-serve", title: "2. visit-simulator + ad-server", subtitle: "User-Independent Visits -> Ad-Server (R1)", x: 262, y: 14, w: 344, h: 616, color: "#818cf8" },
-      { id: "lane-sim", title: "3. simulation + analyzer", subtitle: "Click Evaluator & Auto-Analysis", x: 622, y: 14, w: 274, h: 616, color: "#34d399" },
+      { id: "lane-serve", title: "2. visit-simulator + ad-server", subtitle: "Visits & ClickOracle <-> Ad-Server (R1)", x: 262, y: 14, w: 344, h: 616, color: "#818cf8" },
+      { id: "lane-sim", title: "3. simulation + analyzer", subtitle: "30-Day Orchestrator & Auto-Analysis", x: 622, y: 14, w: 274, h: 616, color: "#34d399" },
       { id: "lane-ui", title: "4. sim-agent + dashboard", subtitle: "SVG Plot, Live API & Export", x: 912, y: 14, w: 236, h: 616, color: "#fbbf24" },
     ];
 
@@ -224,9 +224,9 @@
         pieceId: "visit-simulator",
         kind: "process",
         crate: "visit-simulator",
-        title: pieceName("visit-simulator", "User-Independent Visit Simulator"),
-        sub: "user_ids ONLY · Stream 1 · 600 visits/d or quota",
-        desc: pieceSummary("visit-simulator", "User-independent visit and slot simulator issuing serve_ads(user_id) calls without seeing preferences."),
+        title: pieceName("visit-simulator", "Visit Simulator & Click Oracle"),
+        sub: "Visits (Stream 1) · ClickOracle 4%/0% (Stream 2)",
+        desc: pieceSummary("visit-simulator", "Models visitor arrivals (Stream 1), ad slot generation via serve_ads(user_id), and visitor clicks via ClickOracle (Stream 2)."),
         x: 278, y: 66, w: 312, h: 70, color: "#818cf8",
         flows: ["ad-serving", "cpc-loop"],
       },
@@ -286,27 +286,27 @@
         flows: ["ad-serving", "cpc-loop"],
       },
 
-      // Lane 3: simulation + simulation-analyzer
+      // Lane 3: visit click oracle + simulation orchestrator + simulation-analyzer
+      {
+        id: "click-check",
+        pieceId: "visit-simulator",
+        kind: "decision",
+        crate: "visit-simulator",
+        title: "ClickOracle?",
+        sub: "4% pref / 0% else · Stream 2",
+        desc: "VisitSimulator's ClickOracle evaluates whether the visiting user clicks each served ad (4% preferred category, 0% otherwise) and calls ad_server.record_impression().",
+        cx: 759, cy: 144, rx: 86, ry: 32, color: "#fbbf24",
+        flows: ["cpc-loop"],
+      },
       {
         id: "delivery-click-engine",
         pieceId: "delivery-click-engine",
         kind: "process",
         crate: "ads-marketplace-simulation",
-        title: pieceName("delivery-click-engine", "30-Day Simulation & Click Evaluator"),
-        sub: "Per ad: click p = 4% * score_preference(u, ad)",
-        desc: pieceSummary("delivery-click-engine", "Evaluates shopper click behavior on Stream 2 and reports clicks back to AdServer."),
-        x: 638, y: 112, w: 242, h: 76, color: "#34d399",
-        flows: ["cpc-loop"],
-      },
-      {
-        id: "click-check",
-        pieceId: null,
-        kind: "decision",
-        crate: "ads-marketplace-simulation",
-        title: "Click drawn?",
-        sub: "4% pref / 0% else",
-        desc: "If clicked, calls ad_server.record_impression(..., true) deducting CPC and retiring exhausted campaigns.",
-        cx: 759, cy: 254, rx: 86, ry: 32, color: "#fbbf24",
+        title: pieceName("delivery-click-engine", "30-Day Simulation Orchestrator"),
+        sub: "30d loop · Score-R1 ML · Ledger report",
+        desc: pieceSummary("delivery-click-engine", "Orchestrates VisitSimulator and AdServer across 30 days, drives daily Score-R1 ML training, and aggregates balanced Schema v1 ledgers."),
+        x: 638, y: 214, w: 242, h: 76, color: "#34d399",
         flows: ["cpc-loop"],
       },
       {
@@ -386,10 +386,9 @@
       { from: "organic-inventory", to: "user-browsing", label: "9 aff + 3 exp", d: "M 129 338 L 129 378", lx: 168, ly: 360, flows: ["marketplace"] },
       { from: "user-browsing", to: "marketplace-json", label: "snapshot", d: "M 129 450 L 129 500", lx: 164, ly: 476, flows: ["marketplace"] },
 
-      // Cross-lane: ads-simulator -> visit-simulator + ad-server + click evaluator
-      { from: "user-browsing", to: "visit-simulator", label: "user_ids ONLY", d: "M 234 396 C 254 396, 254 101, 278 101", lx: 256, ly: 254, color: "#38bdf8", flows: ["ad-serving"] },
+      // Cross-lane: ads-simulator -> visit-simulator + ad-server
+      { from: "user-browsing", to: "visit-simulator", label: "users + prefs", d: "M 234 396 C 254 396, 254 101, 278 101", lx: 256, ly: 254, color: "#38bdf8", flows: ["ad-serving", "cpc-loop"] },
       { from: "advertiser-catalog", to: "ad-server", label: "500 campaigns", d: "M 234 202 C 254 202, 254 211, 278 211", lx: 256, ly: 192, flows: ["ad-serving"] },
-      { from: "user-browsing", to: "delivery-click-engine", label: "score_preference()", d: "M 234 432 C 256 604, 610 604, 638 156", lx: 438, ly: 598, dashed: true, color: "#38bdf8", flows: ["cpc-loop"] },
 
       // Visit simulator -> Ad-Server -> R1 -> Served Slate
       { from: "visit-simulator", to: "ad-server", label: "serve_ads(user_id)", d: "M 434 136 L 434 176", lx: 492, ly: 158, color: "#818cf8", flows: ["ad-serving", "cpc-loop"] },
@@ -398,11 +397,12 @@
       { from: "active-check", to: "ads-ranker-r1", label: "Yes", d: "M 404 332 L 404 368", lx: 424, ly: 350, color: "#34d399", flows: ["ad-serving", "cpc-loop"] },
       { from: "ads-ranker-r1", to: "served-slate", label: "20 random funded", d: "M 434 438 L 434 486", lx: 496, ly: 462, color: "#a78bfa", flows: ["ad-serving", "cpc-loop"] },
 
-      // Served Slate -> Click Evaluator -> CPC Retirement Loop + Report
-      { from: "served-slate", to: "delivery-click-engine", label: "deliver slate", d: "M 574 513 C 612 513, 612 138, 638 138", lx: 610, ly: 356, flows: ["cpc-loop"] },
-      { from: "delivery-click-engine", to: "click-check", label: "per ad draw", d: "M 759 188 L 759 222", lx: 798, ly: 206, flows: ["cpc-loop"] },
-      { from: "click-check", to: "ad-server", label: "record_impression (-CPC)", d: "M 673 254 C 608 254, 608 211, 590 211", lx: 614, ly: 226, dashed: true, color: "#fbbf24", flows: ["cpc-loop"] },
-      { from: "click-check", to: "report-json", label: "record day", d: "M 759 286 L 759 334", lx: 794, ly: 310, flows: ["cpc-loop", "analysis"] },
+      // Served Slate -> VisitSimulator ClickOracle -> CPC Retirement Loop + Orchestrator -> Report
+      { from: "served-slate", to: "click-check", label: "evaluate slate", d: "M 574 513 C 612 513, 612 144, 673 144", lx: 616, ly: 356, flows: ["cpc-loop"] },
+      { from: "visit-simulator", to: "click-check", label: "user prefs", d: "M 590 101 C 632 101, 632 126, 673 126", lx: 632, ly: 94, dashed: true, color: "#38bdf8", flows: ["cpc-loop"] },
+      { from: "click-check", to: "ad-server", label: "record_impression (-CPC)", d: "M 673 156 C 624 156, 624 211, 590 211", lx: 632, ly: 196, dashed: true, color: "#fbbf24", flows: ["cpc-loop"] },
+      { from: "click-check", to: "delivery-click-engine", label: "impressions & clicks", d: "M 759 176 L 759 214", lx: 816, ly: 196, flows: ["cpc-loop"] },
+      { from: "delivery-click-engine", to: "report-json", label: "record day", d: "M 759 290 L 759 334", lx: 794, ly: 312, flows: ["cpc-loop", "analysis"] },
 
       // Report -> Simulation Analyzer & Sim-Agent
       { from: "report-json", to: "simulation-analyzer", label: "analyze_report()", d: "M 759 390 L 759 444", lx: 810, ly: 418, color: "#34d399", flows: ["analysis"] },

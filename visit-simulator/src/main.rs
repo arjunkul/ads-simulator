@@ -139,7 +139,6 @@ fn run(args: Args) -> Result<PathBuf, Box<dyn Error>> {
         args.bidding,
         args.slate_size,
     );
-    let user_ids: Vec<String> = marketplace.users.iter().map(|u| u.id.clone()).collect();
     let mut ad_server = AdServer::from_marketplace(
         &marketplace,
         AdServerConfig {
@@ -157,7 +156,7 @@ fn run(args: Args) -> Result<PathBuf, Box<dyn Error>> {
         },
     )?;
     let mut simulator = VisitSimulator::new(
-        user_ids,
+        marketplace.users,
         VisitSimulatorConfig {
             seed: args.seed,
             ..VisitSimulatorConfig::default()

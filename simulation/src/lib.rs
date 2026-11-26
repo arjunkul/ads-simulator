@@ -1,9 +1,9 @@
 //! Seeded 30-day click-only CPC ad marketplace simulation library.
 //!
-//! Wires [`visit_simulator::VisitSimulator`] (user-independent visit and slot-generation stream),
-//! [`ad_server::AdServer`] (campaign budget pool + explicit 5-axis `Retrieval × Pacing × Bidding
-//! × Scoring × Ranking` strategy pipeline), `ads-ml` PyTorch daily CTR training (`Score-R1`),
-//! and shopper click evaluation.
+//! Orchestrates [`visit_simulator::VisitSimulator`] (visit arrivals, ad slot generation, and
+//! [`visit_simulator::ClickOracle`]), [`ad_server::AdServer`] (campaign budget pool + explicit
+//! 5-axis `Retrieval × Pacing × Bidding × Scoring × Ranking` strategy pipeline), and `ads-ml`
+//! PyTorch daily CTR training (`Score-R1`).
 
 pub mod simulation;
 
@@ -18,8 +18,9 @@ pub use ad_server::{
     run_first_price_auction, sample_pst_second_of_day, validate_strategy,
 };
 pub use visit_simulator::{
-    DEFAULT_DAILY_REQUESTS, DayGenerationStats, GeneratedImpression, VisitSimulator,
-    VisitSimulatorConfig, VisitSimulatorSpec, visit_simulator_spec,
+    CLICK_RNG_STREAM, ClickOracle, DEFAULT_DAILY_REQUESTS, DayGenerationStats,
+    GeneratedImpression, VisitSimulator, VisitSimulatorConfig, VisitSimulatorSpec,
+    visit_simulator_spec,
 };
 pub use simulation::{
     Activity, CAMPAIGNS_PER_ADVERTISER, Campaign, Config, DAYS, DEFAULT_CPC_CENTS,

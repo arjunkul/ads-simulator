@@ -22,8 +22,6 @@ dependencies = [
  "ads-ml",
  "ads-simulator",
  "clap",
- "rand",
- "rand_chacha",
  "serde",
  "serde_json",
  "tempfile",

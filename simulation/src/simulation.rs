@@ -1,10 +1,10 @@
 //! 30-day CPC simulation orchestrator.
 //!
-//! Wires [`visit_simulator::VisitSimulator`] (user-independent visit and slot-generation stream with
-//! optional PST diurnal timestamps for `pacing-1`), [`ad_server::AdServer`] (explicit 5-axis
-//! `Retrieval × Pacing × Bidding × Scoring × Ranking` strategy pipeline, including `Retrieve-V0`,
-//! `Pacing-1`, `bidding-autobid-v0`, and daily PyTorch `Score-R1` training via `ads-ml`), and
-//! shopper click evaluation (`score_preference(user, ad_item) * 4%`).
+//! Orchestrates [`visit_simulator::VisitSimulator`] (user visit arrivals with optional PST diurnal
+//! timestamps for `pacing-1`, ad slot generation, and [`visit_simulator::ClickOracle`]),
+//! [`ad_server::AdServer`] (explicit 5-axis `Retrieval × Pacing × Bidding × Scoring × Ranking`
+//! strategy pipeline, including `Retrieve-V0`, `Pacing-1`, `bidding-autobid-v0`, and daily PyTorch
+//! `Score-R1` training via `ads-ml`), and balanced Schema v1 report aggregation.
 
 use std::{
     collections::HashMap,
@@ -28,17 +28,18 @@ use ads_ml::{
     AdCandidate, ImpressionClickRef, ImpressionLogStore, PyTorchTrainer, SufficientStatsPayload,
     TrainingConfig,
 };
-use ads_simulator::{Item, Marketplace, User, score_preference};
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha8Rng;
+use ads_simulator::{Item, Marketplace};
 use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
-use visit_simulator::{DEFAULT_DAILY_REQUESTS, VisitSimulator, VisitSimulatorConfig};
+use visit_simulator::{
+    CLICK_RNG_STREAM as VISIT_CLICK_RNG_STREAM, DEFAULT_DAILY_REQUESTS,
+    MAX_CLICK_PROBABILITY as VISIT_MAX_CLICK_PROBABILITY, VisitSimulator, VisitSimulatorConfig,
+};
 
 pub const SCHEMA_VERSION: u32 = SERVER_SCHEMA_VERSION;
 pub const DAYS: usize = SERVER_DAYS;
 pub const CAMPAIGNS_PER_ADVERTISER: usize = SERVER_CAMPAIGNS_PER_ADVERTISER;
-pub const MAX_CLICK_PROBABILITY: f64 = 0.04;
+pub const MAX_CLICK_PROBABILITY: f64 = VISIT_MAX_CLICK_PROBABILITY;
 pub const DEFAULT_SEED: u64 = SERVER_DEFAULT_SEED;
 pub const DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS: u64 = SERVER_DEFAULT_MIN_BUDGET;
 pub const DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS: u64 = SERVER_DEFAULT_MAX_BUDGET;
@@ -49,7 +50,7 @@ pub const DEFAULT_SCORING: ScoringStrategy = SERVER_DEFAULT_SCORING;
 pub const DEFAULT_PACING: PacingStrategy = SERVER_DEFAULT_PACING;
 pub const DEFAULT_BIDDING: BiddingStrategy = SERVER_DEFAULT_BIDDING;
 pub const DEFAULT_SLATE_SIZE: usize = R1_SLATE_SIZE;
-pub const CLICK_RNG_STREAM: u64 = 2;
+pub const CLICK_RNG_STREAM: u64 = VISIT_CLICK_RNG_STREAM;
 
 const fn default_min_campaign_budget_cents() -> u64 {
     DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS
@@ -350,18 +351,6 @@ fn invalid(message: impl Into<String>) -> Error {
     Error::new(ErrorKind::InvalidInput, message.into())
 }
 
-fn build_user_lookup(marketplace: &Marketplace) -> Result<(Vec<String>, HashMap<&str, &User>), Error> {
-    let mut user_ids = Vec::with_capacity(marketplace.users.len());
-    let mut users = HashMap::with_capacity(marketplace.users.len());
-    for user in &marketplace.users {
-        if users.insert(user.id.as_str(), user).is_some() {
-            return Err(invalid(format!("duplicate user ID {}", user.id)));
-        }
-        user_ids.push(user.id.clone());
-    }
-    Ok((user_ids, users))
-}
-
 fn build_item_lookup(marketplace: &Marketplace) -> HashMap<(&str, &str), (&str, &Item)> {
     let mut lookup = HashMap::new();
     for adv in &marketplace.advertisers {
@@ -439,7 +428,7 @@ pub fn run_with_log_dir<'a>(
         return Err(invalid("slate_size must be positive"));
     }
 
-    let (user_ids, user_lookup) = build_user_lookup(marketplace)?;
+    let user_ids: Vec<String> = marketplace.users.iter().map(|u| u.id.clone()).collect();
     let item_lookup = build_item_lookup(marketplace);
 
     let mut ad_server = AdServer::from_marketplace(
@@ -534,17 +523,15 @@ pub fn run_with_log_dir<'a>(
     }
 
     let mut visit_simulator = VisitSimulator::new(
-        user_ids.clone(),
+        marketplace.users.clone(),
         VisitSimulatorConfig {
             seed: config.seed,
             days: DAYS,
             daily_requests: DEFAULT_DAILY_REQUESTS,
             target_impressions: config.impressions,
+            max_click_probability: MAX_CLICK_PROBABILITY,
         },
     )?;
-
-    let mut click_rng = ChaCha8Rng::seed_from_u64(config.seed);
-    click_rng.set_stream(CLICK_RNG_STREAM);
 
     let mut days = Vec::with_capacity(DAYS);
     let mut totals = Activity::default();
@@ -564,17 +551,6 @@ pub fn run_with_log_dir<'a>(
         let mut write_err: Option<Error> = None;
 
         let day_stats = visit_simulator.run_day(day, &mut ad_server, |impression| {
-            let user = user_lookup
-                .get(impression.user_id.as_str())
-                .expect("visit simulator only emits known user IDs");
-            let &(_, item) = item_lookup
-                .get(&(
-                    impression.ad.advertiser_id.as_str(),
-                    impression.ad.ad_item_id.as_str(),
-                ))
-                .expect("ad server only emits known catalog items");
-            let score = score_preference(user, item);
-            let clicked = click_rng.random_bool(MAX_CLICK_PROBABILITY * score);
             if use_ml_scoring {
                 if let (Some(&u_idx), Some(&k_idx)) = (
                     user_idx_map.get(impression.user_id.as_str()),
@@ -582,13 +558,19 @@ pub fn run_with_log_dir<'a>(
                 ) {
                     let slot = &mut ml_counts[u_idx * num_campaigns + k_idx];
                     slot.0 += 1;
-                    if clicked {
+                    if impression.clicked {
                         slot.1 += 1;
                     }
                 }
             }
             if let Some(writer) = day_writer.as_mut() {
                 if write_err.is_none() {
+                    let &(_, item) = item_lookup
+                        .get(&(
+                            impression.ad.advertiser_id.as_str(),
+                            impression.ad.ad_item_id.as_str(),
+                        ))
+                        .expect("ad server only emits known catalog items");
                     let rec = ImpressionClickRef {
                         day,
                         user_id: impression.user_id.as_str(),
@@ -600,14 +582,13 @@ pub fn run_with_log_dir<'a>(
                         ad_category_id: impression.ad.category_id.as_str(),
                         ad_price_cents: item.price_cents,
                         cpc_cents: impression.ad.cpc_cents,
-                        clicked,
+                        clicked: impression.clicked,
                     };
                     if let Err(err) = writer.write_ref(&rec) {
                         write_err = Some(err);
                     }
                 }
             }
-            clicked
         })?;
 
         if let Some(err) = write_err {
