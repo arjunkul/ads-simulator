@@ -308,7 +308,7 @@
         tr.className = "clickable" + (id === selectedRun ? " selected" : "");
         tr.innerHTML = `
           <td><strong class="mono">${m.id}</strong><div style="font-size:0.75rem;color:var(--muted);">Runtime ${m.runtime}</div></td>
-          <td><span class="badge badge-primary mono">${m.ranking}</span><div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">${m.rankingName}</div></td>
+          <td><span class="badge badge-success mono">${m.ranking}</span><div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">${m.rankingName}</div></td>
           <td><span class="badge badge-purple mono">${m.scoring}</span><div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">${m.scoringName}</div></td>
           <td><span class="badge badge-warning mono">${m.pacing}</span><div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">${m.pacingName}</div></td>
           <td class="mono">${m.slate}</td>
@@ -329,7 +329,7 @@
       document.getElementById("detail-panel").innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-            <span class="badge badge-primary mono">Ranking ${sel.ranking}</span>
+            <span class="badge badge-success mono">Ranking ${sel.ranking}</span>
             <span class="badge badge-purple mono">Scoring ${sel.scoring}</span>
             <span class="badge badge-warning mono">Pacing ${sel.pacing}</span>
             <strong style="margin-left:6px;font-size:1.02rem;">${sel.rankingName} · ${sel.scoringName} · ${sel.pacingName}</strong>
@@ -360,7 +360,7 @@
       `;
 
       document.getElementById("registry-grid").innerHTML = [
-        { title: "Ranking Strategies (--ranker)", badge: "badge-primary", items: REGISTRY.ranking },
+        { title: "Ranking Strategies (--ranker)", badge: "badge-success", items: REGISTRY.ranking },
         { title: "Scoring Strategies (--scoring)", badge: "badge-purple", items: REGISTRY.scoring },
         { title: "Pacing Strategies (--pacing)", badge: "badge-warning", items: REGISTRY.pacing }
       ].map((grp) => `
