@@ -82,8 +82,8 @@ export const tests = [
         assert.strictEqual(res.status, 200);
         validateBudgetTimeSeries(res.data.timeseries, { sim_seed: 42, impressions: null });
         assert.strictEqual(res.data.timeseries.summary.total_impressions, 360000);
-        assert.strictEqual(res.data.timeseries.summary.total_clicks, 719);
-        assert.strictEqual(res.data.timeseries.summary.total_spend_cents, 71900);
+        assert.strictEqual(res.data.timeseries.summary.total_clicks, 701);
+        assert.strictEqual(res.data.timeseries.summary.total_spend_cents, 70100);
         validateBudgetSvg(res.data.svg, res.data.timeseries);
       } finally {
         await server.stop();

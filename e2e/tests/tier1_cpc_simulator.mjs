@@ -83,8 +83,8 @@ export const tests = [
       for (let i = 10; i < 30; i++) {
         assert.strictEqual(report.days[i].impressions, 33333, `Day ${i + 1} must deliver 33333 impressions`);
       }
-      assert.strictEqual(report.days[0].clicks, 70);
-      assert.strictEqual(report.days[0].spend_cents, 7000);
+      assert.strictEqual(report.days[0].clicks, 60);
+      assert.strictEqual(report.days[0].spend_cents, 6000);
     },
   }),
 
@@ -112,14 +112,14 @@ export const tests = [
         impressions: null,
       });
       assert.strictEqual(report.summary.budget_cents, 5000000);
-      assert.strictEqual(report.summary.remaining_budget_cents, 4928100);
+      assert.strictEqual(report.summary.remaining_budget_cents, 4929900);
       assert.strictEqual(report.summary.ad_requests, 18000);
       assert.strictEqual(report.summary.opportunities, 360000);
       assert.strictEqual(report.summary.no_matching_category, 0);
       assert.strictEqual(report.summary.insufficient_budget, 0);
       assert.strictEqual(report.summary.impressions, 360000);
-      assert.strictEqual(report.summary.clicks, 719);
-      assert.strictEqual(report.summary.spend_cents, 71900);
+      assert.strictEqual(report.summary.clicks, 701);
+      assert.strictEqual(report.summary.spend_cents, 70100);
       for (const d of report.days) {
         assert.strictEqual(d.ad_requests, 600);
         assert.strictEqual(d.opportunities, 12000);

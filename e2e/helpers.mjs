@@ -1521,25 +1521,15 @@ export function validateMarketplaceJson(mp, opts = {}) {
     assert.strictEqual(organicPerCat.get(catId), 50, `category ${catId} must have 50 organic items`);
   }
 
-  // Users: 1000 total, 5 distinct preferred categories each, distinct sets
+  // Users: 1000 total with unique IDs (preferred categories moved to visit-simulator)
   assert.ok(Array.isArray(mp.users), "marketplace.users must be an array");
   assert.strictEqual(mp.users.length, 1000, `expected 1000 users, got ${mp.users.length}`);
-  const userPrefsById = new Map();
-  const prefSignatures = new Set();
+  const userIdsSeen = new Set();
   for (const u of mp.users) {
     assert.ok(isPlainObject(u), "user must be an object");
     assert.ok(typeof u.id === "string" && u.id.length > 0, "user.id missing");
-    assert.ok(!userPrefsById.has(u.id), `duplicate user id: ${u.id}`);
-    assert.ok(Array.isArray(u.preferred_category_ids) && u.preferred_category_ids.length === 5, `user ${u.id} must have 5 preferred_category_ids`);
-    const prefSet = new Set(u.preferred_category_ids);
-    assert.strictEqual(prefSet.size, 5, `user ${u.id} preferred_category_ids must be distinct`);
-    for (const cid of prefSet) {
-      assert.ok(categoryIds.has(cid), `user ${u.id} references unknown category ${cid}`);
-    }
-    const sig = [...prefSet].sort().join(",");
-    assert.ok(!prefSignatures.has(sig), `duplicate user preference set: ${sig}`);
-    prefSignatures.add(sig);
-    userPrefsById.set(u.id, prefSet);
+    assert.ok(!userIdsSeen.has(u.id), `duplicate user id: ${u.id}`);
+    userIdsSeen.add(u.id);
   }
 
   // Browsing events: 12000 total (12 per user: 9 affinity + 3 exploration)
@@ -1549,16 +1539,13 @@ export function validateMarketplaceJson(mp, opts = {}) {
   let totalAffinity = 0;
   let totalExploration = 0;
   for (const ev of mp.browsing_events) {
-    assert.ok(userPrefsById.has(ev.user_id), `browsing_event references unknown user_id: ${ev.user_id}`);
+    assert.ok(userIdsSeen.has(ev.user_id), `browsing_event references unknown user_id: ${ev.user_id}`);
     const organic = organicById.get(ev.organic_item_id);
     assert.ok(organic, `browsing_event references unknown organic_item_id: ${ev.organic_item_id}`);
-    const prefs = userPrefsById.get(ev.user_id);
     if (ev.reason === "affinity") {
       totalAffinity += 1;
-      assert.ok(prefs.has(organic.category_id), `affinity event for ${ev.user_id} must match preferred category`);
     } else if (ev.reason === "exploration") {
       totalExploration += 1;
-      assert.ok(!prefs.has(organic.category_id), `exploration event for ${ev.user_id} must NOT be in preferred categories`);
     } else {
       assert.fail(`invalid browsing_event reason: ${ev.reason}`);
     }
@@ -1574,10 +1561,16 @@ export function validateMarketplaceJson(mp, opts = {}) {
     assert.strictEqual(itemSet.size, 12, `user ${uid} must browse 12 distinct organic items`);
     const positions = evs.map((e) => e.position).sort((a, b) => a - b);
     assert.deepStrictEqual(positions, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], `user ${uid} positions must be 1..=12`);
-    const aff = evs.filter((e) => e.reason === "affinity").length;
-    const exp = evs.filter((e) => e.reason === "exploration").length;
-    assert.strictEqual(aff, 9, `user ${uid} must have 9 affinity events, got ${aff}`);
-    assert.strictEqual(exp, 3, `user ${uid} must have 3 exploration events, got ${exp}`);
+    const aff = evs.filter((e) => e.reason === "affinity");
+    const exp = evs.filter((e) => e.reason === "exploration");
+    assert.strictEqual(aff.length, 9, `user ${uid} must have 9 affinity events, got ${aff.length}`);
+    assert.strictEqual(exp.length, 3, `user ${uid} must have 3 exploration events, got ${exp.length}`);
+    const affCats = new Set(aff.map((e) => organicById.get(e.organic_item_id).category_id));
+    const expCats = new Set(exp.map((e) => organicById.get(e.organic_item_id).category_id));
+    assert.ok(affCats.size <= 5, `user ${uid} affinity events must span <= 5 focus categories`);
+    for (const cid of expCats) {
+      assert.ok(!affCats.has(cid), `user ${uid} exploration category ${cid} must not overlap affinity categories`);
+    }
   }
 }
 

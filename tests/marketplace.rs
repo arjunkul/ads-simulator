@@ -4,9 +4,9 @@ use std::process::Command;
 
 use ads_simulator::{
     ADVERTISER_COUNT, AFFINITY_VIEWS, BrowseReason, CATALOG_SIZE, CATEGORIES_PER_GROUP, CURRENCY,
-    DEFAULT_SEED, EXPLORATION_VIEWS, INTEREST_COUNT, Item, Marketplace, MarketplaceSpec,
-    ORGANIC_PER_CATEGORY, SCHEMA_VERSION, TAXONOMY_GROUP_COUNT, USER_COUNT, User,
-    generate_marketplace, marketplace_spec, score_preference, taxonomy,
+    DEFAULT_SEED, EXPLORATION_VIEWS, Marketplace, MarketplaceSpec, ORGANIC_PER_CATEGORY,
+    SCHEMA_VERSION, TAXONOMY_GROUP_COUNT, USER_COUNT, User, generate_marketplace,
+    marketplace_spec, taxonomy,
 };
 
 #[test]
@@ -25,14 +25,6 @@ fn generates_the_requested_inventory_and_personas() {
         data.users
             .iter()
             .map(|user| &user.id)
-            .collect::<HashSet<_>>()
-            .len(),
-        data.users.len(),
-    );
-    assert_eq!(
-        data.users
-            .iter()
-            .map(|user| &user.preferred_category_ids)
             .collect::<HashSet<_>>()
             .len(),
         data.users.len(),
@@ -101,18 +93,6 @@ fn every_user_browses_distinct_organic_items_with_affinity_and_exploration() {
 
     for (user, events) in data.users.iter().zip(data.browsing_events.chunks_exact(12)) {
         assert_eq!(
-            user.preferred_category_ids
-                .iter()
-                .collect::<HashSet<_>>()
-                .len(),
-            5
-        );
-        assert!(
-            user.preferred_category_ids
-                .iter()
-                .all(|category| categories.contains(category))
-        );
-        assert_eq!(
             events
                 .iter()
                 .map(|event| &event.organic_item_id)
@@ -120,6 +100,22 @@ fn every_user_browses_distinct_organic_items_with_affinity_and_exploration() {
                 .len(),
             12
         );
+        let mut affinity_categories = HashSet::new();
+        let mut exploration_categories = HashSet::new();
+        for (index, event) in events.iter().enumerate() {
+            assert_eq!(event.user_id, user.id);
+            assert_eq!(event.position, index + 1);
+            let cat = &organic[&event.organic_item_id].category_id;
+            assert!(categories.contains(cat));
+            match event.reason {
+                BrowseReason::Affinity => {
+                    affinity_categories.insert(cat.as_str());
+                }
+                BrowseReason::Exploration => {
+                    exploration_categories.insert(cat.as_str());
+                }
+            }
+        }
         assert_eq!(
             events
                 .iter()
@@ -127,20 +123,13 @@ fn every_user_browses_distinct_organic_items_with_affinity_and_exploration() {
                 .count(),
             9
         );
-        for (index, event) in events.iter().enumerate() {
-            assert_eq!(event.user_id, user.id);
-            assert_eq!(event.position, index + 1);
-            assert_eq!(
-                user.preferred_category_ids
-                    .contains(&organic[&event.organic_item_id].category_id),
-                event.reason == BrowseReason::Affinity,
-            );
-        }
+        assert!(affinity_categories.len() <= 5);
+        assert!(affinity_categories.is_disjoint(&exploration_categories));
     }
 }
 
 #[test]
-fn only_an_items_category_affects_preference() {
+fn legacy_user_fields_deserialize_and_reserialize_as_id_only() {
     let former_user = r#"{
         "id": "a", "preferred_category_ids": ["books"], "shopping_style": "researcher",
         "preference": {"item_budget_cents": 1000, "price_sensitivity_pct": 100, "ad_receptiveness_pct": 0}
@@ -148,28 +137,8 @@ fn only_an_items_category_affects_preference() {
     let reader: User = serde_json::from_str(former_user).unwrap();
     assert_eq!(
         serde_json::to_value(&reader).unwrap(),
-        serde_json::json!({"id": "a", "preferred_category_ids": ["books"]})
+        serde_json::json!({"id": "a"})
     );
-    let player = User {
-        id: "b".into(),
-        preferred_category_ids: vec!["games".into()],
-    };
-    let organic_book = Item {
-        id: "organic-book".into(),
-        category_id: "books".into(),
-        name: "Book".into(),
-        price_cents: 1_000,
-    };
-    let ad_book = Item {
-        id: "ad-book".into(),
-        price_cents: 10_000,
-        category_id: organic_book.category_id.clone(),
-        name: organic_book.name.clone(),
-    };
-    for book in [organic_book, ad_book] {
-        assert_eq!(score_preference(&reader, &book), 1.0);
-        assert_eq!(score_preference(&player, &book), 0.0);
-    }
 }
 
 #[test]
@@ -193,7 +162,7 @@ fn cli_export_round_trips_and_reproduces_the_same_seed() {
     let first = run_export();
     let data: Marketplace = serde_json::from_slice(&first).unwrap();
     assert_eq!(data, generate_marketplace(-42));
-    assert_ne!(data.users, generate_marketplace(43).users);
+    assert_ne!(data.browsing_events, generate_marketplace(43).browsing_events);
     assert_eq!(run_export(), first);
     assert_eq!(fs::read_dir(output_dir).unwrap().count(), 1);
 }
@@ -258,7 +227,6 @@ fn marketplace_spec_matches_constants_generated_data_and_round_trips_json() {
         spec.total_organic_items,
         spec.category_count * ORGANIC_PER_CATEGORY
     );
-    assert_eq!(spec.interest_count, INTEREST_COUNT);
     assert_eq!(spec.affinity_views, AFFINITY_VIEWS);
     assert_eq!(spec.exploration_views, EXPLORATION_VIEWS);
     assert_eq!(
@@ -285,7 +253,6 @@ fn marketplace_spec_matches_constants_generated_data_and_round_trips_json() {
             user_count: 1_000,
             organic_per_category: 50,
             total_organic_items: 5_000,
-            interest_count: 5,
             affinity_views: 9,
             exploration_views: 3,
             browsing_events_per_user: 12,
@@ -313,11 +280,6 @@ fn marketplace_spec_matches_constants_generated_data_and_round_trips_json() {
         spec.total_catalog_items
     );
     assert_eq!(data.users.len(), spec.user_count);
-    assert!(
-        data.users
-            .iter()
-            .all(|user| user.preferred_category_ids.len() == spec.interest_count)
-    );
     assert_eq!(data.organic_items.len(), spec.total_organic_items);
     assert_eq!(data.browsing_events.len(), spec.total_browsing_events);
     assert_eq!(

@@ -77,9 +77,9 @@ export const tests = [
       validateBudgetSvg(svgText, ts);
 
       assert.strictEqual(ts.summary.total_budget_cents, 279898700);
-      assert.strictEqual(ts.summary.total_clicks, 1984);
-      assert.strictEqual(ts.summary.total_spend_cents, 198400);
-      assert.strictEqual(ts.summary.remaining_budget_cents, 279700300);
+      assert.strictEqual(ts.summary.total_clicks, 2029);
+      assert.strictEqual(ts.summary.total_spend_cents, 202900);
+      assert.strictEqual(ts.summary.remaining_budget_cents, 279695800);
 
       const server = await startDashboardServer([
         "--sim-report", path.join(baseDir, "budget_timeseries.json"),
@@ -94,13 +94,13 @@ export const tests = [
             12_000,
           );
           const bodyText = await session.eval("document.body.innerText");
-          const spendCandidates = formatUsdCandidates(198400);
+          const spendCandidates = formatUsdCandidates(202900);
           assert.ok(
             spendCandidates.some((c) => bodyText.includes(c)),
             `Rendered dashboard must display baseline spend (${spendCandidates.join(" | ")})`,
           );
           const norm = bodyText.replace(/(\d),(\d)/g, "$1$2");
-          assert.ok(norm.includes("1984"), "Rendered dashboard must display 1,984 clicks");
+          assert.ok(norm.includes("2029"), "Rendered dashboard must display 2,029 clicks");
           assert.ok(norm.includes("1000000"), "Rendered dashboard must display 1,000,000 impressions");
           assert.deepStrictEqual(session.consoleErrors, []);
           assert.deepStrictEqual(session.pageErrors, []);

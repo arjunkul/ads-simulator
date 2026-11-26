@@ -155,10 +155,18 @@ fn run(args: Args) -> Result<PathBuf, Box<dyn Error>> {
             slate_size: args.slate_size,
         },
     )?;
+    let user_ids: Vec<String> = marketplace.users.iter().map(|u| u.id.clone()).collect();
+    let category_ids: Vec<String> = marketplace
+        .categories
+        .iter()
+        .map(|c| c.id.clone())
+        .collect();
     let mut simulator = VisitSimulator::new(
-        marketplace.users,
+        user_ids,
+        category_ids,
         VisitSimulatorConfig {
             seed: args.seed,
+            preference_seed: Some(marketplace.seed.cast_unsigned()),
             ..VisitSimulatorConfig::default()
         },
     )?;

@@ -17,14 +17,14 @@ The top-level fields `schema_version`, `seed`, and `currency` identify the schem
 |---|---|
 | `categories` | 100 named product categories in ten groups. Each has a unique ID. |
 | `advertisers` | 50 synthetic merchants with a specialty, daily budget, and 20 catalog items each. Their 1,000 catalog items share the taxonomy and have unique IDs. |
-| `users` | 1,000 synthetic shoppers, each with an ID and a unique set of five preferred categories. |
+| `users` | 1,000 synthetic shoppers, each with a unique ID (`user-0001`..`user-1000`). |
 | `organic_items` | 5,000 non-ad listings, 50 per category, with IDs distinct from advertiser catalog item IDs. |
 | `browsing_events` | 12,000 organic listing views. Each event contains a user ID, an organic item ID, a one-based position within that user's sequence, and a reason. |
 
-Older exports that include additional user or advertiser fields (such as legacy `objective`) remain readable by Rust. Newly generated user records contain only `id` and `preferred_category_ids`.
+Older exports that include additional user or advertiser fields (such as legacy `preferred_category_ids`, `shopping_style`, `preference`, or `objective`) remain readable by Rust for backward compatibility. Newly generated user records contain only `id`; visitor preferred categories (`preferred_category_ids`) and `score_preference` are owned by `visit-simulator`.
 
 ## Preference model
 
-Use `score_preference(user, item)` for either an organic listing or an advertiser catalog item. An item in one of the user's preferred categories scores 1. All other items score 0.
+Visitor category preferences (5 unique preferred categories per shopper) and `score_preference(profile, item)` live in `visit-simulator`, modeling how a user/visitor evaluates ads (`1.0` for a preferred category, `0.0` otherwise).
 
-Each user's browsing sequence contains nine distinct items sampled from preferred categories and three distinct items sampled from other categories. The generator shuffles the 12 selected items into browsing order using the same seed.
+Each user's organic browsing sequence in `marketplace.json` contains nine distinct items sampled from five focus categories (`affinity`) and three distinct items sampled from other categories (`exploration`), shuffled into browsing order using the marketplace seed.

@@ -522,10 +522,17 @@ pub fn run_with_log_dir<'a>(
         ml_counts = vec![(0u64, 0u64); num_users * num_campaigns];
     }
 
+    let category_ids: Vec<String> = marketplace
+        .categories
+        .iter()
+        .map(|c| c.id.clone())
+        .collect();
     let mut visit_simulator = VisitSimulator::new(
-        marketplace.users.clone(),
+        user_ids.clone(),
+        category_ids,
         VisitSimulatorConfig {
             seed: config.seed,
+            preference_seed: Some(marketplace.seed.cast_unsigned()),
             days: DAYS,
             daily_requests: DEFAULT_DAILY_REQUESTS,
             target_impressions: config.impressions,
@@ -745,8 +752,8 @@ mod tests {
             .map(|campaign| campaign.totals.impressions)
             .collect();
 
-        for user in &mut marketplace.users {
-            user.preferred_category_ids = vec!["no-campaign-category".to_owned()];
+        for (idx, category) in marketplace.categories.iter_mut().enumerate() {
+            category.id = format!("no-campaign-category-{:03}", idx + 1);
         }
         let report = run(&marketplace, config).unwrap();
         assert_eq!(report.summary.activity.impressions, 3_000);

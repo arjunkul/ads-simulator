@@ -17,7 +17,7 @@ pub const ADVERTISER_COUNT: usize = 50;
 pub const CATALOG_SIZE: usize = 20;
 pub const USER_COUNT: usize = 1_000;
 pub const ORGANIC_PER_CATEGORY: usize = 50;
-pub const INTEREST_COUNT: usize = 5;
+const BROWSING_FOCUS_CATEGORIES: usize = 5;
 pub const AFFINITY_VIEWS: usize = 9;
 pub const EXPLORATION_VIEWS: usize = 3;
 pub const TAXONOMY_GROUP_COUNT: usize = 10;
@@ -64,7 +64,6 @@ pub struct Item {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct User {
     pub id: String,
-    pub preferred_category_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -97,7 +96,6 @@ pub struct MarketplaceSpec {
     pub user_count: usize,
     pub organic_per_category: usize,
     pub total_organic_items: usize,
-    pub interest_count: usize,
     pub affinity_views: usize,
     pub exploration_views: usize,
     pub browsing_events_per_user: usize,
@@ -126,20 +124,10 @@ pub fn marketplace_spec() -> MarketplaceSpec {
         user_count: USER_COUNT,
         organic_per_category: ORGANIC_PER_CATEGORY,
         total_organic_items: category_count * ORGANIC_PER_CATEGORY,
-        interest_count: INTEREST_COUNT,
         affinity_views: AFFINITY_VIEWS,
         exploration_views: EXPLORATION_VIEWS,
         browsing_events_per_user,
         total_browsing_events: USER_COUNT * browsing_events_per_user,
-    }
-}
-
-/// Return 1 for an item in a preferred category, or 0 for any other item.
-pub fn score_preference(user: &User, item: &Item) -> f64 {
-    if user.preferred_category_ids.contains(&item.category_id) {
-        1.0
-    } else {
-        0.0
     }
 }
 
@@ -237,27 +225,24 @@ fn generate_browsing(
 
     for number in 1..=USER_COUNT {
         let user_id = format!("user-{number:04}");
-        let interests = loop {
-            let mut sample = index::sample(rng, categories.len(), INTEREST_COUNT).into_vec();
+        let focus = loop {
+            let mut sample =
+                index::sample(rng, categories.len(), BROWSING_FOCUS_CATEGORIES).into_vec();
             sample.sort_unstable();
             if preference_sets.insert(sample.clone()) {
                 break sample;
             }
         };
-        let outside_interests: Vec<_> = (0..categories.len())
-            .filter(|category| !interests.contains(category))
+        let outside_focus: Vec<_> = (0..categories.len())
+            .filter(|category| !focus.contains(category))
             .collect();
 
         let user = User {
             id: user_id.clone(),
-            preferred_category_ids: interests
-                .iter()
-                .map(|&i| categories[i].id.clone())
-                .collect(),
         };
-        let affinity = sample_organic_items(rng, &interests, AFFINITY_VIEWS)
+        let affinity = sample_organic_items(rng, &focus, AFFINITY_VIEWS)
             .map(|item_index| (item_index, BrowseReason::Affinity));
-        let exploration = sample_organic_items(rng, &outside_interests, EXPLORATION_VIEWS)
+        let exploration = sample_organic_items(rng, &outside_focus, EXPLORATION_VIEWS)
             .map(|item_index| (item_index, BrowseReason::Exploration));
         let mut views: Vec<_> = affinity.chain(exploration).collect();
         views.shuffle(rng);

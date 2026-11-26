@@ -200,9 +200,9 @@
         pieceId: "user-browsing",
         kind: "process",
         crate: "ads-simulator",
-        title: pieceName("user-browsing", "Shopper Personas & Preference Model"),
-        sub: "1,000 users · 5 prefs · score_preference()",
-        desc: pieceSummary("user-browsing", "1,000 users with unique 5-category preferences and score_preference(u, item)."),
+        title: pieceName("user-browsing", "Shopper Roster & Organic Browsing"),
+        sub: "1,000 user_ids · 12k organic views",
+        desc: pieceSummary("user-browsing", "1,000 shopper IDs and 12,000 shuffled organic browsing events."),
         x: 24, y: 378, w: 210, h: 72, color: "#38bdf8",
         flows: ["marketplace", "ad-serving", "cpc-loop"],
       },
@@ -224,9 +224,9 @@
         pieceId: "visit-simulator",
         kind: "process",
         crate: "visit-simulator",
-        title: pieceName("visit-simulator", "Visit Simulator & Click Oracle"),
-        sub: "Visits (Stream 1) · ClickOracle 4%/0% (Stream 2)",
-        desc: pieceSummary("visit-simulator", "Models visitor arrivals (Stream 1), ad slot generation via serve_ads(user_id), and visitor clicks via ClickOracle (Stream 2)."),
+        title: pieceName("visit-simulator", "Visit Simulator, Preferences & Click Oracle"),
+        sub: "5 prefs/user (S3) · Visits (S1) · ClickOracle (S2)",
+        desc: pieceSummary("visit-simulator", "Assigns 5 preferred categories/user (Stream 3), simulates visit arrivals (Stream 1), and runs ClickOracle (Stream 2)."),
         x: 278, y: 66, w: 312, h: 70, color: "#818cf8",
         flows: ["ad-serving", "cpc-loop"],
       },
@@ -387,7 +387,7 @@
       { from: "user-browsing", to: "marketplace-json", label: "snapshot", d: "M 129 450 L 129 500", lx: 164, ly: 476, flows: ["marketplace"] },
 
       // Cross-lane: ads-simulator -> visit-simulator + ad-server
-      { from: "user-browsing", to: "visit-simulator", label: "users + prefs", d: "M 234 396 C 254 396, 254 101, 278 101", lx: 256, ly: 254, color: "#38bdf8", flows: ["ad-serving", "cpc-loop"] },
+      { from: "user-browsing", to: "visit-simulator", label: "user_ids", d: "M 234 396 C 254 396, 254 101, 278 101", lx: 256, ly: 254, color: "#38bdf8", flows: ["ad-serving", "cpc-loop"] },
       { from: "advertiser-catalog", to: "ad-server", label: "500 campaigns", d: "M 234 202 C 254 202, 254 211, 278 211", lx: 256, ly: 192, flows: ["ad-serving"] },
 
       // Visit simulator -> Ad-Server -> R1 -> Served Slate

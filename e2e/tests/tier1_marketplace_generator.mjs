@@ -65,8 +65,8 @@ export const tests = [
       for (const user of mp.users) {
         assert.deepStrictEqual(
           Object.keys(user).sort(),
-          ["id", "preferred_category_ids"],
-          `User ${user.id} must only serialize id and preferred_category_ids`,
+          ["id"],
+          `User ${user.id} must only serialize id`,
         );
       }
     },
@@ -108,7 +108,7 @@ export const tests = [
       validateMarketplaceJson(mpB, { expectedSeed: 43 });
 
       assert.deepStrictEqual(mpA.categories, mpB.categories, "Taxonomy categories must be invariant across seeds");
-      assert.notDeepStrictEqual(mpA.users, mpB.users, "User personas must vary across distinct seeds");
+      assert.notDeepStrictEqual(mpA.advertisers, mpB.advertisers, "Advertiser catalogs must vary across distinct seeds");
       assert.notDeepStrictEqual(mpA.browsing_events, mpB.browsing_events, "Browsing events must vary across distinct seeds");
     },
   }),

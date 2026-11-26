@@ -19,8 +19,9 @@ pub use ad_server::{
 };
 pub use visit_simulator::{
     CLICK_RNG_STREAM, ClickOracle, DEFAULT_DAILY_REQUESTS, DayGenerationStats,
-    GeneratedImpression, VisitSimulator, VisitSimulatorConfig, VisitSimulatorSpec,
-    visit_simulator_spec,
+    GeneratedImpression, INTEREST_COUNT, PREFERENCE_RNG_STREAM, UserPreferenceProfile,
+    VisitSimulator, VisitSimulatorConfig, VisitSimulatorSpec, generate_user_preferences,
+    score_preference, visit_simulator_spec,
 };
 pub use simulation::{
     Activity, CAMPAIGNS_PER_ADVERTISER, Campaign, Config, DAYS, DEFAULT_CPC_CENTS,
