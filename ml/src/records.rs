@@ -160,17 +160,18 @@ impl ImpressionLogStore {
         self.root.join(format!("day-{day:02}.jsonl"))
     }
 
-    /// Ensure the log directory exists and remove any previous `day-*.jsonl` log files.
+    pub fn model_file_path(&self, day: usize) -> PathBuf {
+        self.root.join(format!("model-day-{day:02}.json"))
+    }
+
+    /// Ensure the log directory exists and remove any previous `day-*.jsonl` or `model-day-*.json` files.
     pub fn clear(&self) -> io::Result<()> {
         fs::create_dir_all(&self.root)?;
         for entry in fs::read_dir(&self.root)? {
             let entry = entry?;
             let path = entry.path();
-            if path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .and_then(parse_day_filename)
-                .is_some()
+            if let Some(name) = path.file_name().and_then(|name| name.to_str())
+                && (parse_day_filename(name).is_some() || parse_model_filename(name).is_some())
             {
                 fs::remove_file(path)?;
             }
@@ -284,6 +285,14 @@ impl ImpressionLogStore {
 
 fn parse_day_filename(name: &str) -> Option<usize> {
     let digits = name.strip_prefix("day-")?.strip_suffix(".jsonl")?;
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse::<usize>().ok().filter(|&day| day > 0)
+}
+
+fn parse_model_filename(name: &str) -> Option<usize> {
+    let digits = name.strip_prefix("model-day-")?.strip_suffix(".json")?;
     if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }

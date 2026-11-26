@@ -4,7 +4,8 @@ mod model;
 mod records;
 
 pub use model::{
-    CtrModel, LogisticRegressionModel, PreparedScorer, TrainingConfig, TrainingSummary,
+    CtrModel, LogisticRegressionModel, PreparedScorer, PyTorchTrainer, TrainingConfig,
+    TrainingSummary,
 };
 pub use records::{
     AdCandidate, BorrowedImpressionClickRecord, DailyImpressionWriter, ImpressionClickRecord,

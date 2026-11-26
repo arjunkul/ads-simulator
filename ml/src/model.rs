@@ -1,6 +1,11 @@
 use std::{
-    collections::{HashMap, VecDeque},
-    io::{self, Error, ErrorKind},
+    collections::HashMap,
+    env,
+    ffi::OsStr,
+    fs::File,
+    io::{self, BufRead, BufReader, Error, ErrorKind, Read, Write},
+    path::Path,
+    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
 };
 
 use serde::{Deserialize, Serialize};
@@ -8,10 +13,12 @@ use serde::{Deserialize, Serialize};
 use crate::records::{AdCandidate, ImpressionClickRecord, ImpressionLogStore, RankingContext};
 
 const DENSE_USER_CATEGORY_LIMIT: usize = 2_000_000;
-const INTERCEPT_INDEX: usize = 0;
-const SAME_CATEGORY_INDEX: usize = 1;
+const MODEL_SCHEMA_VERSION: u32 = 1;
+const DEFAULT_PYTHON_BIN: &str = "python3";
+const PYTHON_ENV_VAR: &str = "ADS_ML_PYTHON";
+const DEFAULT_TRAIN_SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/pytorch/train_lr.py");
 
-/// Interface for click-through-rate models used to rank ad candidates.
+/// Interface for click-through-rate models used to score ad candidates.
 pub trait CtrModel {
     /// Predict the probability of a click in `(0, 1)` for a candidate ad in the given context.
     fn predict_ctr(&self, context: &RankingContext<'_>, candidate: &AdCandidate<'_>) -> f64;
@@ -32,18 +39,18 @@ pub trait CtrModel {
     }
 }
 
-/// Hyperparameters for cold-training an L2-regularized logistic regression CTR model.
+/// Hyperparameters for cold-training an L2-regularized logistic regression CTR model in PyTorch.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TrainingConfig {
     /// L2 regularization strength applied to all non-intercept weights.
     pub l2_penalty: f64,
-    /// Maximum number of L-BFGS iterations.
+    /// Maximum number of PyTorch L-BFGS iterations.
     pub max_iterations: usize,
     /// Stopping threshold on the infinity-norm of the objective gradient.
     pub gradient_tolerance: f64,
     /// Stopping threshold on relative objective decrease between consecutive iterations.
     pub relative_loss_tolerance: f64,
-    /// Number of recent curvature pairs kept by L-BFGS.
+    /// Number of recent curvature pairs kept by PyTorch L-BFGS.
     pub history_size: usize,
 }
 
@@ -95,7 +102,7 @@ impl TrainingConfig {
     }
 }
 
-/// Diagnostics produced by a single cold-training run.
+/// Diagnostics produced by a single PyTorch cold-training run.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TrainingSummary {
     pub impressions: u64,
@@ -121,160 +128,203 @@ impl Default for TrainingSummary {
     }
 }
 
-#[derive(Default)]
-struct StringInterner {
-    to_id: HashMap<String, u32>,
+#[derive(Serialize)]
+struct WorkerRequest<'a> {
+    log_dir: &'a Path,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    through_day: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    days: Option<&'a [usize]>,
+    model_out: &'a Path,
+    config: TrainingConfig,
 }
 
-impl StringInterner {
-    fn intern(&mut self, value: &str) -> u32 {
-        if let Some(&id) = self.to_id.get(value) {
-            return id;
+#[derive(Deserialize)]
+struct WorkerResponse {
+    ok: bool,
+    error: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ModelArtifact {
+    schema_version: u32,
+    trainer: String,
+    torch_version: Option<String>,
+    intercept: f64,
+    same_category_weight: f64,
+    users: HashMap<String, f64>,
+    ad_categories: HashMap<String, f64>,
+    advertisers: HashMap<String, f64>,
+    campaigns: HashMap<String, f64>,
+    user_ad_categories: Vec<(String, String, f64)>,
+    summary: TrainingSummary,
+}
+
+/// Persistent PyTorch training worker (`ml/pytorch/train_lr.py --serve-stdio`).
+///
+/// Spawning one worker per simulation pays `import torch` startup cost once while
+/// still cold-training a fresh `torch.nn.Module` from disk logs on every request.
+pub struct PyTorchTrainer {
+    child: Child,
+    stdin: Option<ChildStdin>,
+    stdout: BufReader<ChildStdout>,
+}
+
+impl PyTorchTrainer {
+    /// Spawn the default PyTorch trainer using `ADS_ML_PYTHON` (or `python3`) and `ml/pytorch/train_lr.py`.
+    pub fn spawn() -> io::Result<Self> {
+        let python_bin = env::var_os(PYTHON_ENV_VAR).unwrap_or_else(|| DEFAULT_PYTHON_BIN.into());
+        Self::spawn_with(python_bin, Path::new(DEFAULT_TRAIN_SCRIPT))
+    }
+
+    /// Spawn a PyTorch trainer with an explicit Python executable and training script path.
+    pub fn spawn_with(
+        python_bin: impl AsRef<OsStr>,
+        script_path: impl AsRef<Path>,
+    ) -> io::Result<Self> {
+        let script = script_path.as_ref();
+        if !script.exists() {
+            return Err(Error::new(
+                ErrorKind::NotFound,
+                format!("PyTorch training script not found at {}", script.display()),
+            ));
         }
-        let id = self.to_id.len() as u32;
-        self.to_id.insert(value.to_owned(), id);
-        id
+
+        let mut child = Command::new(python_bin)
+            .arg(script)
+            .arg("--serve-stdio")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| Error::other("failed to capture PyTorch trainer stdin"))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| Error::other("failed to capture PyTorch trainer stdout"))?;
+
+        Ok(Self {
+            child,
+            stdin: Some(stdin),
+            stdout: BufReader::new(stdout),
+        })
     }
 
-    fn len(&self) -> usize {
-        self.to_id.len()
-    }
-
-    fn into_map(self) -> HashMap<String, u32> {
-        self.to_id
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct GroupKey {
-    user: u32,
-    ad_category: u32,
-    advertiser: u32,
-    campaign: u32,
-    same_category: bool,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct GroupStats {
-    user: u32,
-    ad_category: u32,
-    advertiser: u32,
-    campaign: u32,
-    user_ad_category: u32,
-    same_category: bool,
-    impressions: u64,
-    clicks: u64,
-}
-
-/// Streams impression-click observations into exact sufficient statistics for logistic regression.
-#[derive(Default)]
-struct DatasetAccumulator {
-    users: StringInterner,
-    ad_categories: StringInterner,
-    advertisers: StringInterner,
-    campaigns: StringInterner,
-    user_ad_category_ids: HashMap<(u32, u32), u32>,
-    group_indices: HashMap<GroupKey, usize>,
-    groups: Vec<GroupStats>,
-    total_impressions: u64,
-    total_clicks: u64,
-}
-
-impl DatasetAccumulator {
-    fn observe(
+    /// Cold-train a fresh PyTorch logistic regression model on specific logged days and save the exported model JSON to `model_out`.
+    pub fn train_from_days(
         &mut self,
-        user_id: &str,
-        organic_category_id: &str,
-        campaign_id: &str,
-        advertiser_id: &str,
-        ad_category_id: &str,
-        clicked: bool,
-    ) {
-        let user = self.users.intern(user_id);
-        let ad_category = self.ad_categories.intern(ad_category_id);
-        let advertiser = self.advertisers.intern(advertiser_id);
-        let campaign = self.campaigns.intern(campaign_id);
-        let same_category = organic_category_id == ad_category_id;
-
-        let next_uc = self.user_ad_category_ids.len() as u32;
-        let user_ad_category = *self
-            .user_ad_category_ids
-            .entry((user, ad_category))
-            .or_insert(next_uc);
-
-        let key = GroupKey {
-            user,
-            ad_category,
-            advertiser,
-            campaign,
-            same_category,
+        store: &ImpressionLogStore,
+        days: impl IntoIterator<Item = usize>,
+        model_out: &Path,
+        config: TrainingConfig,
+    ) -> io::Result<LogisticRegressionModel> {
+        config.validate()?;
+        let day_list: Vec<usize> = days.into_iter().collect();
+        if day_list.is_empty() {
+            return Ok(LogisticRegressionModel::untrained());
+        }
+        let request = WorkerRequest {
+            log_dir: store.root(),
+            through_day: None,
+            days: Some(&day_list),
+            model_out,
+            config,
         };
-        if let Some(&group_index) = self.group_indices.get(&key) {
-            let stats = &mut self.groups[group_index];
-            stats.impressions += 1;
-            if clicked {
-                stats.clicks += 1;
-            }
+        self.send_request(&request)?;
+        LogisticRegressionModel::load_from_file(model_out)
+    }
+
+    /// Cold-train a fresh PyTorch logistic regression model on all logged days `1..=through_day` and save the exported model JSON to `model_out`.
+    pub fn train_from_log_store(
+        &mut self,
+        store: &ImpressionLogStore,
+        through_day: usize,
+        model_out: &Path,
+        config: TrainingConfig,
+    ) -> io::Result<LogisticRegressionModel> {
+        config.validate()?;
+        if through_day == 0 {
+            return Ok(LogisticRegressionModel::untrained());
+        }
+        let request = WorkerRequest {
+            log_dir: store.root(),
+            through_day: Some(through_day),
+            days: None,
+            model_out,
+            config,
+        };
+        self.send_request(&request)?;
+        LogisticRegressionModel::load_from_file(model_out)
+    }
+
+    fn send_request(&mut self, request: &WorkerRequest<'_>) -> io::Result<()> {
+        let payload = serde_json::to_string(request)
+            .map_err(|err| Error::new(ErrorKind::InvalidInput, err))?;
+        let stdin = self
+            .stdin
+            .as_mut()
+            .ok_or_else(|| Error::new(ErrorKind::BrokenPipe, "PyTorch trainer stdin is closed"))?;
+        if let Err(err) = writeln!(stdin, "{payload}").and_then(|()| stdin.flush()) {
+            let detail = self.read_stderr_detail();
+            return Err(Error::new(
+                err.kind(),
+                format!("failed to send request to PyTorch trainer: {err}{detail}"),
+            ));
+        }
+
+        let mut response_line = String::new();
+        let bytes = self.stdout.read_line(&mut response_line)?;
+        if bytes == 0 {
+            let detail = self.read_stderr_detail();
+            return Err(Error::new(
+                ErrorKind::UnexpectedEof,
+                format!("PyTorch trainer exited before replying{detail}"),
+            ));
+        }
+
+        let response: WorkerResponse = serde_json::from_str(response_line.trim())
+            .map_err(|err| Error::new(ErrorKind::InvalidData, err))?;
+        if !response.ok {
+            let message = response
+                .error
+                .unwrap_or_else(|| "unknown PyTorch training error".to_owned());
+            return Err(Error::other(format!("PyTorch trainer failed: {message}")));
+        }
+        Ok(())
+    }
+
+    fn read_stderr_detail(&mut self) -> String {
+        self.stdin.take();
+        let _ = self.child.wait();
+        let mut stderr_buf = String::new();
+        if let Some(mut stderr) = self.child.stderr.take() {
+            let _ = stderr.read_to_string(&mut stderr_buf);
+        }
+        let trimmed = stderr_buf.trim();
+        if trimmed.is_empty() {
+            String::new()
         } else {
-            let group_index = self.groups.len();
-            self.group_indices.insert(key, group_index);
-            self.groups.push(GroupStats {
-                user,
-                ad_category,
-                advertiser,
-                campaign,
-                user_ad_category,
-                same_category,
-                impressions: 1,
-                clicks: u64::from(clicked),
-            });
-        }
-
-        self.total_impressions += 1;
-        if clicked {
-            self.total_clicks += 1;
-        }
-    }
-
-    fn feature_layout(&self) -> FeatureLayout {
-        let user_offset = 2;
-        let ad_category_offset = user_offset + self.users.len();
-        let advertiser_offset = ad_category_offset + self.ad_categories.len();
-        let campaign_offset = advertiser_offset + self.advertisers.len();
-        let user_ad_category_offset = campaign_offset + self.campaigns.len();
-        let total_features = user_ad_category_offset + self.user_ad_category_ids.len();
-        FeatureLayout {
-            user_offset,
-            ad_category_offset,
-            advertiser_offset,
-            campaign_offset,
-            user_ad_category_offset,
-            total_features,
+            format!("\nPyTorch trainer stderr:\n{trimmed}")
         }
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct FeatureLayout {
-    user_offset: usize,
-    ad_category_offset: usize,
-    advertiser_offset: usize,
-    campaign_offset: usize,
-    user_ad_category_offset: usize,
-    total_features: usize,
+impl Drop for PyTorchTrainer {
+    fn drop(&mut self) {
+        self.stdin.take();
+        let _ = self.child.wait();
+    }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct IndexedGroup {
-    features: [usize; 5],
-    same_category: bool,
-    impressions: f64,
-    clicks: f64,
-}
-
-/// L2-regularized logistic regression model trained from impression-click logs.
+/// L2-regularized logistic regression CTR model trained by PyTorch (`ml/pytorch/train_lr.py`).
 #[derive(Clone, Debug)]
 pub struct LogisticRegressionModel {
+    trainer: String,
+    torch_version: Option<String>,
     intercept: f64,
     same_category_weight: f64,
     user_ids: HashMap<String, u32>,
@@ -294,6 +344,8 @@ impl LogisticRegressionModel {
     /// Create an untrained neutral model that predicts 0.5 for every candidate.
     pub fn untrained() -> Self {
         Self {
+            trainer: "pytorch".to_owned(),
+            torch_version: None,
             intercept: 0.0,
             same_category_weight: 0.0,
             user_ids: HashMap::new(),
@@ -310,125 +362,115 @@ impl LogisticRegressionModel {
         }
     }
 
-    /// Cold-train a fresh logistic regression model from in-memory impression-click records.
+    /// Load a PyTorch-exported logistic regression model artifact JSON from disk.
+    pub fn load_from_file(path: &Path) -> io::Result<Self> {
+        let file = File::open(path)?;
+        let artifact: ModelArtifact = serde_json::from_reader(BufReader::new(file))
+            .map_err(|err| Error::new(ErrorKind::InvalidData, err))?;
+        if artifact.schema_version != MODEL_SCHEMA_VERSION {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!(
+                    "unsupported model artifact schema version {} (expected {})",
+                    artifact.schema_version, MODEL_SCHEMA_VERSION
+                ),
+            ));
+        }
+
+        let (user_ids, user_weights) = index_weight_map(artifact.users);
+        let (ad_category_ids, ad_category_weights) = index_weight_map(artifact.ad_categories);
+        let (advertiser_ids, advertiser_weights) = index_weight_map(artifact.advertisers);
+        let (campaign_ids, campaign_weights) = index_weight_map(artifact.campaigns);
+
+        let mut user_ad_category_ids = HashMap::with_capacity(artifact.user_ad_categories.len());
+        let mut user_ad_category_weights = Vec::with_capacity(artifact.user_ad_categories.len());
+        for (user_id, ad_cat_id, weight) in artifact.user_ad_categories {
+            if let (Some(&u), Some(&c)) = (user_ids.get(&user_id), ad_category_ids.get(&ad_cat_id))
+            {
+                let idx = user_ad_category_weights.len() as u32;
+                user_ad_category_ids.insert((u, c), idx);
+                user_ad_category_weights.push(weight);
+            }
+        }
+
+        Ok(Self {
+            trainer: artifact.trainer,
+            torch_version: artifact.torch_version,
+            intercept: artifact.intercept,
+            same_category_weight: artifact.same_category_weight,
+            user_ids,
+            user_weights,
+            ad_category_ids,
+            ad_category_weights,
+            advertiser_ids,
+            advertiser_weights,
+            campaign_ids,
+            campaign_weights,
+            user_ad_category_ids,
+            user_ad_category_weights,
+            summary: artifact.summary,
+        })
+    }
+
+    /// Convenience one-shot helper that writes `records` to a temporary log store and cold-trains via PyTorch.
     pub fn train_from_records<'a>(
         records: impl IntoIterator<Item = &'a ImpressionClickRecord>,
         config: TrainingConfig,
     ) -> io::Result<Self> {
         config.validate()?;
-        let mut accumulator = DatasetAccumulator::default();
+        let temp = tempfile::tempdir()?;
+        let store = ImpressionLogStore::new(temp.path());
+        let mut writer = store.create_day_writer(1)?;
+        let mut count = 0u64;
         for record in records {
-            accumulator.observe(
-                &record.user_id,
-                &record.organic_category_id,
-                &record.campaign_id,
-                &record.advertiser_id,
-                &record.ad_category_id,
-                record.clicked,
-            );
+            writer.write(record)?;
+            count += 1;
         }
-        Ok(Self::fit_accumulator(accumulator, config))
+        writer.finish()?;
+        if count == 0 {
+            return Ok(Self::untrained());
+        }
+        let mut trainer = PyTorchTrainer::spawn()?;
+        let model_out = temp.path().join("model.json");
+        trainer.train_from_days(&store, [1], &model_out, config)
     }
 
-    /// Cold-train a fresh logistic regression model from specific logged day files on disk.
+    /// Convenience one-shot helper that cold-trains via PyTorch on specific logged day files on disk.
     pub fn train_from_days(
         store: &ImpressionLogStore,
         days: impl IntoIterator<Item = usize>,
         config: TrainingConfig,
     ) -> io::Result<Self> {
         config.validate()?;
-        let mut accumulator = DatasetAccumulator::default();
-        for day in days {
-            store.for_each_record_in_day(day, |record| {
-                accumulator.observe(
-                    &record.user_id,
-                    &record.organic_category_id,
-                    &record.campaign_id,
-                    &record.advertiser_id,
-                    &record.ad_category_id,
-                    record.clicked,
-                );
-            })?;
+        let day_list: Vec<usize> = days.into_iter().collect();
+        if day_list.is_empty() {
+            return Ok(Self::untrained());
         }
-        Ok(Self::fit_accumulator(accumulator, config))
+        let temp = tempfile::tempdir()?;
+        let model_out = temp.path().join("model.json");
+        let mut trainer = PyTorchTrainer::spawn()?;
+        trainer.train_from_days(store, day_list, &model_out, config)
     }
 
-    /// Cold-train a fresh logistic regression model from all logged days `1..=through_day` on disk.
+    /// Convenience one-shot helper that cold-trains via PyTorch on all logged days `1..=through_day` on disk.
     pub fn train_from_log_store(
         store: &ImpressionLogStore,
         through_day: usize,
         config: TrainingConfig,
     ) -> io::Result<Self> {
+        if through_day == 0 {
+            config.validate()?;
+            return Ok(Self::untrained());
+        }
         Self::train_from_days(store, 1..=through_day, config)
     }
 
-    fn fit_accumulator(accumulator: DatasetAccumulator, config: TrainingConfig) -> Self {
-        if accumulator.total_impressions == 0 {
-            return Self::untrained();
-        }
+    pub fn trainer(&self) -> &str {
+        &self.trainer
+    }
 
-        let layout = accumulator.feature_layout();
-        let indexed_groups: Vec<IndexedGroup> = accumulator
-            .groups
-            .iter()
-            .map(|group| IndexedGroup {
-                features: [
-                    layout.user_offset + group.user as usize,
-                    layout.ad_category_offset + group.ad_category as usize,
-                    layout.advertiser_offset + group.advertiser as usize,
-                    layout.campaign_offset + group.campaign as usize,
-                    layout.user_ad_category_offset + group.user_ad_category as usize,
-                ],
-                same_category: group.same_category,
-                impressions: group.impressions as f64,
-                clicks: group.clicks as f64,
-            })
-            .collect();
-
-        let (weights, iterations, converged, data_loss) = solve_lbfgs(
-            &indexed_groups,
-            layout.total_features,
-            accumulator.total_impressions,
-            accumulator.total_clicks,
-            config,
-        );
-
-        let intercept = weights[INTERCEPT_INDEX];
-        let same_category_weight = weights[SAME_CATEGORY_INDEX];
-        let user_weights = weights[layout.user_offset..layout.ad_category_offset].to_vec();
-        let ad_category_weights =
-            weights[layout.ad_category_offset..layout.advertiser_offset].to_vec();
-        let advertiser_weights = weights[layout.advertiser_offset..layout.campaign_offset].to_vec();
-        let campaign_weights =
-            weights[layout.campaign_offset..layout.user_ad_category_offset].to_vec();
-        let user_ad_category_weights =
-            weights[layout.user_ad_category_offset..layout.total_features].to_vec();
-
-        let summary = TrainingSummary {
-            impressions: accumulator.total_impressions,
-            clicks: accumulator.total_clicks,
-            unique_groups: indexed_groups.len(),
-            feature_count: layout.total_features,
-            iterations,
-            converged,
-            mean_log_loss: data_loss / accumulator.total_impressions as f64,
-        };
-
-        Self {
-            intercept,
-            same_category_weight,
-            user_ids: accumulator.users.into_map(),
-            user_weights,
-            ad_category_ids: accumulator.ad_categories.into_map(),
-            ad_category_weights,
-            advertiser_ids: accumulator.advertisers.into_map(),
-            advertiser_weights,
-            campaign_ids: accumulator.campaigns.into_map(),
-            campaign_weights,
-            user_ad_category_ids: accumulator.user_ad_category_ids,
-            user_ad_category_weights,
-            summary,
-        }
+    pub fn torch_version(&self) -> Option<&str> {
+        self.torch_version.as_deref()
     }
 
     pub fn summary(&self) -> &TrainingSummary {
@@ -608,7 +650,7 @@ enum UserCategoryTable {
     },
 }
 
-/// Pre-indexed scorer for fast repeated candidate ranking over fixed user/category/campaign tables.
+/// Pre-indexed scorer for fast repeated candidate scoring over fixed user/category/campaign tables.
 #[derive(Clone, Debug)]
 pub struct PreparedScorer {
     same_category_weight: f64,
@@ -653,246 +695,15 @@ impl PreparedScorer {
     }
 }
 
-fn solve_lbfgs(
-    groups: &[IndexedGroup],
-    num_features: usize,
-    total_impressions: u64,
-    total_clicks: u64,
-    config: TrainingConfig,
-) -> (Vec<f64>, usize, bool, f64) {
-    let mut weights = vec![0.0; num_features];
-
-    // Degenerate all-negative or all-positive datasets have optimal non-intercept weights = 0.
-    if total_clicks == 0 || total_clicks == total_impressions {
-        let smoothed_p = (total_clicks as f64 + 0.5) / (total_impressions as f64 + 1.0);
-        weights[INTERCEPT_INDEX] = (smoothed_p / (1.0 - smoothed_p)).ln();
-        let (data_loss, _) = evaluate_loss_and_grad(
-            groups,
-            &weights,
-            config.l2_penalty,
-            &mut vec![0.0; num_features],
-        );
-        return (weights, 0, true, data_loss);
+fn index_weight_map(map: HashMap<String, f64>) -> (HashMap<String, u32>, Vec<f64>) {
+    let mut ids = HashMap::with_capacity(map.len());
+    let mut weights = Vec::with_capacity(map.len());
+    for (key, weight) in map {
+        let idx = weights.len() as u32;
+        ids.insert(key, idx);
+        weights.push(weight);
     }
-
-    // Cold-start intercept at the empirical log-odds, all other weights at 0.
-    let prior_p = total_clicks as f64 / total_impressions as f64;
-    weights[INTERCEPT_INDEX] = (prior_p / (1.0 - prior_p)).ln();
-
-    let mut grad = vec![0.0; num_features];
-    let (mut data_loss, mut loss) =
-        evaluate_loss_and_grad(groups, &weights, config.l2_penalty, &mut grad);
-
-    let mut history: VecDeque<(Vec<f64>, Vec<f64>, f64)> =
-        VecDeque::with_capacity(config.history_size);
-    let mut next_weights = vec![0.0; num_features];
-    let mut next_grad = vec![0.0; num_features];
-    let mut direction = vec![0.0; num_features];
-    let mut q = vec![0.0; num_features];
-    let mut alphas = vec![0.0; config.history_size];
-
-    let mut iterations = 0;
-    let mut converged = inf_norm(&grad) <= config.gradient_tolerance;
-
-    while !converged && iterations < config.max_iterations {
-        iterations += 1;
-
-        compute_lbfgs_direction(&grad, &history, &mut q, &mut alphas, &mut direction);
-        let mut dir_deriv = dot(&grad, &direction);
-        if !dir_deriv.is_finite() || dir_deriv >= 0.0 {
-            history.clear();
-            let scale = inf_norm(&grad).max(1.0);
-            for (d, &g) in direction.iter_mut().zip(&grad) {
-                *d = -g / scale;
-            }
-            dir_deriv = dot(&grad, &direction);
-            if dir_deriv >= 0.0 {
-                break;
-            }
-        }
-
-        // Armijo backtracking line search.
-        let mut step = 1.0;
-        let c1 = 1e-4;
-        let mut accepted = false;
-        let mut candidate_data_loss = data_loss;
-        let mut candidate_loss = loss;
-
-        for _ in 0..40 {
-            for i in 0..num_features {
-                next_weights[i] = weights[i] + step * direction[i];
-            }
-            let (dl, total_l) = evaluate_loss_only(groups, &next_weights, config.l2_penalty);
-            if total_l.is_finite() && total_l <= loss + c1 * step * dir_deriv {
-                candidate_data_loss = dl;
-                candidate_loss = total_l;
-                accepted = true;
-                break;
-            }
-            step *= 0.5;
-        }
-
-        if !accepted {
-            if !history.is_empty() {
-                history.clear();
-                continue;
-            }
-            break;
-        }
-
-        let (dl, total_l) =
-            evaluate_loss_and_grad(groups, &next_weights, config.l2_penalty, &mut next_grad);
-        debug_assert!((dl - candidate_data_loss).abs() <= 1e-6 * (1.0 + dl.abs()));
-        debug_assert!((total_l - candidate_loss).abs() <= 1e-6 * (1.0 + total_l.abs()));
-
-        let mut s = vec![0.0; num_features];
-        let mut y = vec![0.0; num_features];
-        let mut sy = 0.0;
-        let mut ss = 0.0;
-        let mut yy = 0.0;
-        for i in 0..num_features {
-            let si = next_weights[i] - weights[i];
-            let yi = next_grad[i] - grad[i];
-            s[i] = si;
-            y[i] = yi;
-            sy += si * yi;
-            ss += si * si;
-            yy += yi * yi;
-        }
-
-        let prev_loss = loss;
-        std::mem::swap(&mut weights, &mut next_weights);
-        std::mem::swap(&mut grad, &mut next_grad);
-        data_loss = dl;
-        loss = total_l;
-
-        if sy > 1e-12 * (ss * yy).sqrt() {
-            if history.len() == config.history_size {
-                history.pop_front();
-            }
-            history.push_back((s, y, 1.0 / sy));
-        }
-
-        let grad_inf = inf_norm(&grad);
-        let rel_improvement = (prev_loss - loss).abs() / prev_loss.abs().max(1.0);
-        if grad_inf <= config.gradient_tolerance
-            || rel_improvement <= config.relative_loss_tolerance
-        {
-            converged = true;
-            break;
-        }
-    }
-
-    (weights, iterations, converged, data_loss)
-}
-
-fn compute_lbfgs_direction(
-    grad: &[f64],
-    history: &VecDeque<(Vec<f64>, Vec<f64>, f64)>,
-    q: &mut [f64],
-    alphas: &mut [f64],
-    direction: &mut [f64],
-) {
-    if history.is_empty() {
-        let scale = inf_norm(grad).max(1.0);
-        for (d, &g) in direction.iter_mut().zip(grad) {
-            *d = -g / scale;
-        }
-        return;
-    }
-
-    q.copy_from_slice(grad);
-    let m = history.len();
-    for i in (0..m).rev() {
-        let (s, y, rho) = &history[i];
-        let alpha = rho * dot(s, q);
-        alphas[i] = alpha;
-        for (qj, &yj) in q.iter_mut().zip(y) {
-            *qj -= alpha * yj;
-        }
-    }
-
-    let (last_s, last_y, _) = history.back().expect("history is non-empty");
-    let yy = dot(last_y, last_y);
-    let gamma = if yy > 0.0 {
-        (dot(last_s, last_y) / yy).clamp(1e-8, 1e8)
-    } else {
-        1.0
-    };
-
-    for (r, &qj) in direction.iter_mut().zip(q.iter()) {
-        *r = gamma * qj;
-    }
-
-    for i in 0..m {
-        let (s, y, rho) = &history[i];
-        let beta = rho * dot(y, direction);
-        let coeff = alphas[i] - beta;
-        for (rj, &sj) in direction.iter_mut().zip(s) {
-            *rj += sj * coeff;
-        }
-    }
-
-    for d in direction.iter_mut() {
-        *d = -*d;
-    }
-}
-
-fn evaluate_loss_only(groups: &[IndexedGroup], weights: &[f64], l2_penalty: f64) -> (f64, f64) {
-    let intercept = weights[INTERCEPT_INDEX];
-    let same_weight = weights[SAME_CATEGORY_INDEX];
-    let mut data_loss = 0.0;
-    for group in groups {
-        let mut z = intercept;
-        if group.same_category {
-            z += same_weight;
-        }
-        for &feature in &group.features {
-            z += weights[feature];
-        }
-        data_loss += group.impressions * log1p_exp(z) - group.clicks * z;
-    }
-    let reg = 0.5 * l2_penalty * weights[1..].iter().map(|&w| w * w).sum::<f64>();
-    (data_loss, data_loss + reg)
-}
-
-fn evaluate_loss_and_grad(
-    groups: &[IndexedGroup],
-    weights: &[f64],
-    l2_penalty: f64,
-    grad: &mut [f64],
-) -> (f64, f64) {
-    grad.fill(0.0);
-    let intercept = weights[INTERCEPT_INDEX];
-    let same_weight = weights[SAME_CATEGORY_INDEX];
-    let mut data_loss = 0.0;
-    for group in groups {
-        let mut z = intercept;
-        if group.same_category {
-            z += same_weight;
-        }
-        for &feature in &group.features {
-            z += weights[feature];
-        }
-        data_loss += group.impressions * log1p_exp(z) - group.clicks * z;
-        let residual = group.impressions * sigmoid(z) - group.clicks;
-        grad[INTERCEPT_INDEX] += residual;
-        if group.same_category {
-            grad[SAME_CATEGORY_INDEX] += residual;
-        }
-        for &feature in &group.features {
-            grad[feature] += residual;
-        }
-    }
-
-    let mut reg_sq = 0.0;
-    for i in 1..weights.len() {
-        let w = weights[i];
-        reg_sq += w * w;
-        grad[i] += l2_penalty * w;
-    }
-    let reg = 0.5 * l2_penalty * reg_sq;
-    (data_loss, data_loss + reg)
+    (ids, weights)
 }
 
 #[inline]
@@ -903,25 +714,6 @@ fn sigmoid(z: f64) -> f64 {
         let ez = z.exp();
         ez / (1.0 + ez)
     }
-}
-
-#[inline]
-fn log1p_exp(z: f64) -> f64 {
-    if z > 0.0 {
-        z + (-z).exp().ln_1p()
-    } else {
-        z.exp().ln_1p()
-    }
-}
-
-#[inline]
-fn dot(a: &[f64], b: &[f64]) -> f64 {
-    a.iter().zip(b).map(|(&x, &y)| x * y).sum()
-}
-
-#[inline]
-fn inf_norm(v: &[f64]) -> f64 {
-    v.iter().fold(0.0_f64, |acc, &x| acc.max(x.abs()))
 }
 
 #[cfg(test)]
@@ -956,6 +748,7 @@ mod tests {
     fn untrained_and_zero_click_models_behave_cleanly() {
         let untrained = LogisticRegressionModel::untrained();
         assert!(!untrained.is_trained());
+        assert_eq!(untrained.trainer(), "pytorch");
         let ctx = RankingContext {
             user_id: "u1",
             organic_category_id: "cat-1",
@@ -977,6 +770,8 @@ mod tests {
             LogisticRegressionModel::train_from_records(&zero_clicks, TrainingConfig::default())
                 .unwrap();
         assert!(model.is_trained());
+        assert_eq!(model.trainer(), "pytorch");
+        assert!(model.torch_version().is_some());
         assert!(model.summary().converged);
         let p1 = model.predict_ctr(&ctx, &ad);
         assert!(p1 > 0.0 && p1 < 0.5);
@@ -984,115 +779,12 @@ mod tests {
     }
 
     #[test]
-    fn analytic_gradient_matches_finite_differences_and_reaches_optimum() {
-        let mut records = Vec::new();
-        for _ in 0..40 {
-            records.push(sample_record(
-                1, "u1", "cat-a", "camp-a", "adv-1", "cat-a", false,
-            ));
-        }
-        for _ in 0..8 {
-            records.push(sample_record(
-                1, "u1", "cat-a", "camp-a", "adv-1", "cat-a", true,
-            ));
-        }
-        for _ in 0..50 {
-            records.push(sample_record(
-                1, "u1", "cat-a", "camp-b", "adv-2", "cat-b", false,
-            ));
-        }
-        for _ in 0..35 {
-            records.push(sample_record(
-                1, "u2", "cat-b", "camp-b", "adv-2", "cat-b", false,
-            ));
-        }
-        for _ in 0..5 {
-            records.push(sample_record(
-                1, "u2", "cat-b", "camp-b", "adv-2", "cat-b", true,
-            ));
-        }
-
-        let mut acc = DatasetAccumulator::default();
-        for r in &records {
-            acc.observe(
-                &r.user_id,
-                &r.organic_category_id,
-                &r.campaign_id,
-                &r.advertiser_id,
-                &r.ad_category_id,
-                r.clicked,
-            );
-        }
-        let layout = acc.feature_layout();
-        let groups: Vec<IndexedGroup> = acc
-            .groups
-            .iter()
-            .map(|g| IndexedGroup {
-                features: [
-                    layout.user_offset + g.user as usize,
-                    layout.ad_category_offset + g.ad_category as usize,
-                    layout.advertiser_offset + g.advertiser as usize,
-                    layout.campaign_offset + g.campaign as usize,
-                    layout.user_ad_category_offset + g.user_ad_category as usize,
-                ],
-                same_category: g.same_category,
-                impressions: g.impressions as f64,
-                clicks: g.clicks as f64,
-            })
-            .collect();
-
-        // Check analytic gradient against central finite differences at a non-zero point.
-        let test_w: Vec<f64> = (0..layout.total_features)
-            .map(|i| -0.3 + 0.07 * (i as f64))
-            .collect();
-        let mut grad = vec![0.0; layout.total_features];
-        evaluate_loss_and_grad(&groups, &test_w, 1.0, &mut grad);
-        let eps = 1e-6;
-        for j in 0..layout.total_features {
-            let mut w_plus = test_w.clone();
-            let mut w_minus = test_w.clone();
-            w_plus[j] += eps;
-            w_minus[j] -= eps;
-            let (_, l_plus) = evaluate_loss_only(&groups, &w_plus, 1.0);
-            let (_, l_minus) = evaluate_loss_only(&groups, &w_minus, 1.0);
-            let fd = (l_plus - l_minus) / (2.0 * eps);
-            assert!(
-                (grad[j] - fd).abs() < 1e-6,
-                "gradient mismatch at {j}: analytic={} fd={fd}",
-                grad[j]
-            );
-        }
-
-        // Check KKT stationarity at the L-BFGS solution.
-        let config = TrainingConfig {
-            gradient_tolerance: 1e-7,
-            relative_loss_tolerance: 0.0,
-            ..TrainingConfig::default()
-        };
-        let (w_opt, _, converged, _) = solve_lbfgs(
-            &groups,
-            layout.total_features,
-            acc.total_impressions,
-            acc.total_clicks,
-            config,
-        );
-        assert!(converged);
-        let mut opt_grad = vec![0.0; layout.total_features];
-        evaluate_loss_and_grad(&groups, &w_opt, config.l2_penalty, &mut opt_grad);
-        assert!(
-            inf_norm(&opt_grad) < 1e-6,
-            "expected near-zero gradient at optimum, got {}",
-            inf_norm(&opt_grad)
-        );
-    }
-
-    #[test]
-    fn model_learns_same_category_and_user_category_preferences_and_matches_prepared_ranker() {
+    fn pytorch_trainer_learns_signals_reproduces_weights_and_matches_prepared_scorer() {
         let temp = tempfile::tempdir().unwrap();
         let store = ImpressionLogStore::new(temp.path());
         store.clear().unwrap();
 
-        // Day 1: u1 clicks cat-a (even when browsing cat-c); u2 clicks cat-b.
+        // Day 1: u1 clicks cat-a (even when browsing cat-c); u2 clicks cat-b on day 2.
         let mut day1 = store.create_day_writer(1).unwrap();
         for i in 0..100 {
             let clicked = i % 10 == 0;
@@ -1107,7 +799,6 @@ mod tests {
         }
         day1.finish().unwrap();
 
-        // Day 2: u2 clicks cat-b, ignores cat-a; plus same-category clicks for u3.
         let mut day2 = store.create_day_writer(2).unwrap();
         for i in 0..100 {
             let clicked = i % 10 == 0;
@@ -1134,28 +825,54 @@ mod tests {
         assert_eq!(store.read_day(1).unwrap().len(), 200);
         assert_eq!(store.read_through_day(2).unwrap().len(), 600);
 
-        let empty_model =
-            LogisticRegressionModel::train_from_log_store(&store, 0, TrainingConfig::default())
-                .unwrap();
+        let mut trainer = PyTorchTrainer::spawn().unwrap();
+
+        let empty_model = trainer
+            .train_from_log_store(
+                &store,
+                0,
+                &store.model_file_path(1),
+                TrainingConfig::default(),
+            )
+            .unwrap();
         assert!(!empty_model.is_trained());
 
-        let day1_only =
-            LogisticRegressionModel::train_from_days(&store, [1], TrainingConfig::default())
-                .unwrap();
+        let day1_only = trainer
+            .train_from_days(
+                &store,
+                [1],
+                &store.model_file_path(1),
+                TrainingConfig::default(),
+            )
+            .unwrap();
+        assert_eq!(day1_only.trainer(), "pytorch");
         assert_eq!(day1_only.summary().impressions, 200);
         assert_eq!(day1_only.summary().clicks, 10);
 
-        let model =
-            LogisticRegressionModel::train_from_log_store(&store, 2, TrainingConfig::default())
-                .unwrap();
+        let model = trainer
+            .train_from_log_store(
+                &store,
+                2,
+                &store.model_file_path(2),
+                TrainingConfig::default(),
+            )
+            .unwrap();
+        assert_eq!(model.trainer(), "pytorch");
+        assert!(model.torch_version().is_some());
         assert_eq!(model.summary().impressions, 600);
         assert_eq!(model.summary().clicks, 30);
         assert!(model.same_category_weight() > 0.0);
+        assert!(store.model_file_path(2).exists());
 
         // Cold training again from disk reproduces identical weights.
-        let repeat =
-            LogisticRegressionModel::train_from_log_store(&store, 2, TrainingConfig::default())
-                .unwrap();
+        let repeat = trainer
+            .train_from_log_store(
+                &store,
+                2,
+                &store.model_file_path(2),
+                TrainingConfig::default(),
+            )
+            .unwrap();
         assert_eq!(model.intercept(), repeat.intercept());
         assert_eq!(model.same_category_weight(), repeat.same_category_weight());
 
@@ -1198,7 +915,6 @@ mod tests {
 
         assert_eq!(model.rank_candidates(&u1_ctx, &candidates)[0], 0);
         assert_eq!(model.rank_candidates(&u2_ctx, &candidates)[0], 1);
-        // Unseen user benefits from learned positive same_category_weight on cat-a.
         assert_eq!(model.rank_candidates(&unseen_ctx, &candidates)[0], 0);
 
         // PreparedScorer must match LogisticRegressionModel::predict_ctr exactly.

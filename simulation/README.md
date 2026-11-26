@@ -12,7 +12,7 @@ cargo run --release --locked --manifest-path simulation/Cargo.toml -- \
 cargo test --locked --manifest-path simulation/Cargo.toml
 ```
 
-To run a serving strategy combining `Rank-Greedy` with `Score-R1` (daily cold-trained logistic regression CTR scoring backed by `ads-ml` and per-day impression-click JSONL logs):
+To run a serving strategy combining `Rank-Greedy` with `Score-R1` (daily cold-trained **PyTorch** logistic regression CTR scoring backed by `ads-ml` and per-day impression-click JSONL logs; requires PyTorch from `ml/pytorch/requirements.txt`):
 
 ```sh
 cargo run --release --locked --manifest-path simulation/Cargo.toml -- \
@@ -30,7 +30,7 @@ A **Serving strategy** is a combination of a **Ranking strategy (`Rank-*`)** and
 
 - **Scoring strategies (`--scoring-strategy`):**
   - `Score-Uniform` (default): assigns a constant neutral score to all eligible campaigns with no model training.
-  - `Score-R1`: logs every delivered impression and click outcome to disk as per-day JSONL (`day-01.jsonl` through `day-30.jsonl` in `--impression-log-dir`, defaulting to `<output_stem>-impressions`). After each day `d` (`1..=29`), `ads-ml` cold-trains a fresh L2-regularized logistic regression CTR model from scratch using all logged impression-click data from days `1..=d` on disk.
+  - `Score-R1`: logs every delivered impression and click outcome to disk as per-day JSONL (`day-01.jsonl` through `day-30.jsonl` in `--impression-log-dir`, defaulting to `<output_stem>-impressions`). After each day `d` (`1..=29`), `ads-ml` invokes the PyTorch trainer (`ml/pytorch/train_lr.py`) to cold-train a fresh L2-regularized `LogisticRegressionCTR` (`torch.nn.Module`) from scratch using all logged impression-click data from days `1..=d` on disk, saving `model-day-{d:02}.json` and loading the learned weights into Rust for fast scoring.
 - **Ranking strategies (`--ranking-strategy`):**
   - `Rank-Uniform` (default): selects one campaign uniformly at random from all affordable campaigns, regardless of scores (useful as the baseline when paired with `Score-Uniform`, or for shadow training/logging when paired with `Score-R1`).
   - `Rank-Greedy`: selects the affordable campaign with the highest candidate score, breaking ties uniformly at random (including on day 1 before `Score-R1` has training data, or under `Score-Uniform`).

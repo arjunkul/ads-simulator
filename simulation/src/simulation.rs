@@ -6,7 +6,7 @@ use std::{
 };
 
 use ads_ml::{
-    AdCandidate, ImpressionClickRef, ImpressionLogStore, LogisticRegressionModel, PreparedScorer,
+    AdCandidate, ImpressionClickRef, ImpressionLogStore, PreparedScorer, PyTorchTrainer,
     TrainingConfig,
 };
 use ads_simulator::{Item, Marketplace, User, score_preference};
@@ -168,6 +168,7 @@ struct Day {
 #[derive(Debug, PartialEq, Serialize)]
 struct DailyTrainingSummary {
     trained_after_day: usize,
+    trainer: String,
     impressions: u64,
     clicks: u64,
     unique_groups: usize,
@@ -384,6 +385,11 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
 
     let mut days = Vec::with_capacity(DAYS);
     let mut training_runs = Vec::new();
+    let mut pytorch_trainer = if needs_training_logs {
+        Some(PyTorchTrainer::spawn()?)
+    } else {
+        None
+    };
     let mut scorer: Option<PreparedScorer> = None;
     let mut totals = Activity::default();
     let mut opportunity_count = 0;
@@ -484,16 +490,15 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
 
         if config.serving.scoring == ScoringStrategy::ScoreR1
             && day < DAYS
-            && let Some(store) = log_store.as_ref()
+            && let (Some(store), Some(trainer)) = (log_store.as_ref(), pytorch_trainer.as_mut())
         {
-            let model = LogisticRegressionModel::train_from_log_store(
-                store,
-                day,
-                TrainingConfig::default(),
-            )?;
+            let model_path = store.model_file_path(day);
+            let model =
+                trainer.train_from_log_store(store, day, &model_path, TrainingConfig::default())?;
             let summary = model.summary();
             training_runs.push(DailyTrainingSummary {
                 trained_after_day: day,
+                trainer: model.trainer().to_owned(),
                 impressions: summary.impressions,
                 clicks: summary.clicks,
                 unique_groups: summary.unique_groups,
@@ -787,22 +792,23 @@ mod tests {
         assert_eq!(r1_report.training_runs.len(), DAYS - 1);
         let mut cumulative_impressions = 0;
         let mut cumulative_clicks = 0;
-        for (idx, run_summary) in r1_report.training_runs.iter().enumerate() {
-            let day = idx + 1;
-            cumulative_impressions += r1_report.days[idx].activity.impressions;
-            cumulative_clicks += r1_report.days[idx].activity.clicks;
-            assert_eq!(run_summary.trained_after_day, day);
-            assert_eq!(run_summary.impressions, cumulative_impressions);
-            assert_eq!(run_summary.clicks, cumulative_clicks);
-            assert!(run_summary.converged);
-        }
-
-        // All 30 daily JSONL log files match the daily report counters.
+        // All 30 daily JSONL log files and 29 PyTorch model artifacts exist and match the report.
         let store = ImpressionLogStore::new(temp.path());
         assert_eq!(
             store.available_days().unwrap(),
             (1..=DAYS).collect::<Vec<_>>()
         );
+        for (idx, run_summary) in r1_report.training_runs.iter().enumerate() {
+            let day = idx + 1;
+            cumulative_impressions += r1_report.days[idx].activity.impressions;
+            cumulative_clicks += r1_report.days[idx].activity.clicks;
+            assert_eq!(run_summary.trained_after_day, day);
+            assert_eq!(run_summary.trainer, "pytorch");
+            assert_eq!(run_summary.impressions, cumulative_impressions);
+            assert_eq!(run_summary.clicks, cumulative_clicks);
+            assert!(run_summary.converged);
+            assert!(store.model_file_path(day).exists());
+        }
         for day in 1..=DAYS {
             let records = store.read_day(day).unwrap();
             let day_summary = &r1_report.days[day - 1];
