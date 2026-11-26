@@ -17,6 +17,40 @@ pub enum PacingStrategy {
     Pacing1,
 }
 
+impl PacingStrategy {
+    /// Return the campaign's pacing multiplier at `second_of_day` in `[0, SECONDS_PER_DAY)`.
+    ///
+    /// Under `Pacing-1`, this is binary throttling: `1.0` when the campaign can
+    /// afford a click within both its total and daily budgets and is on or behind
+    /// the linear intraday spend curve, and `0.0` otherwise.
+    pub fn pacing_factor(
+        self,
+        daily_spend_cents: u64,
+        daily_budget_cents: u64,
+        remaining_budget_cents: u64,
+        cpc_cents: u64,
+        second_of_day: u32,
+    ) -> f64 {
+        if remaining_budget_cents < cpc_cents {
+            return 0.0;
+        }
+        match self {
+            Self::None => 1.0,
+            Self::Pacing1 => {
+                match pacing_1_unlock_second(
+                    daily_spend_cents,
+                    daily_budget_cents,
+                    remaining_budget_cents,
+                    cpc_cents,
+                ) {
+                    Some(unlock_second) if unlock_second <= second_of_day => 1.0,
+                    _ => 0.0,
+                }
+            }
+        }
+    }
+}
+
 /// Split a campaign's upfront budget across `days` as evenly as possible,
 /// giving any remainder cents to the earliest days one cent at a time, and
 /// capping by the campaign's remaining lifetime budget.
@@ -62,7 +96,7 @@ pub fn pacing_1_unlock_second(
 
 #[cfg(test)]
 mod tests {
-    use super::{daily_budget_cents, pacing_1_unlock_second};
+    use super::{PacingStrategy, daily_budget_cents, pacing_1_unlock_second};
     use crate::timestamp::SECONDS_PER_DAY;
 
     #[test]
@@ -89,6 +123,27 @@ mod tests {
         );
         // After 3 clicks ($3.00), daily budget is exhausted.
         assert_eq!(pacing_1_unlock_second(300, 300, 8_700, 100), None);
+    }
+
+    #[test]
+    fn pacing_1_factor_is_binary_around_unlock_second() {
+        // $3.00 daily budget, $1.00 spent -> unlocks at 08:00 PST (28_800s).
+        assert_eq!(
+            PacingStrategy::Pacing1.pacing_factor(100, 300, 8_900, 100, 28_799),
+            0.0
+        );
+        assert_eq!(
+            PacingStrategy::Pacing1.pacing_factor(100, 300, 8_900, 100, 28_800),
+            1.0
+        );
+        assert_eq!(
+            PacingStrategy::Pacing1.pacing_factor(300, 300, 8_700, 100, 86_399),
+            0.0
+        );
+        assert_eq!(
+            PacingStrategy::None.pacing_factor(300, 300, 8_700, 100, 0),
+            1.0
+        );
     }
 
     #[test]

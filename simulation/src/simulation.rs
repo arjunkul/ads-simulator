@@ -4,7 +4,7 @@ use std::{
     io::{Error, ErrorKind},
 };
 
-use ads_simulator::{Item, Marketplace, User, score_preference};
+use ads_simulator::{Item, Marketplace, score_preference};
 use rand::{
     Rng, SeedableRng,
     seq::{IndexedRandom, SliceRandom},
@@ -13,13 +13,14 @@ use rand_chacha::ChaCha8Rng;
 use serde::Serialize;
 
 use crate::{
+    bidding::{AuctionWinner, BiddingStrategy, compute_bid, run_first_price_auction},
     pacing::{PacingStrategy, daily_budget_cents, pacing_1_unlock_second},
+    ranking::{DefaultRankingModel, MAX_CLICK_PROBABILITY, RankingModel},
     timestamp::{HOURS_PER_DAY, PstTimestamp, TIMEZONE_LABEL, sample_pst_second_of_day},
 };
 
 pub const DAYS: usize = 30;
 const CAMPAIGNS_PER_ADVERTISER: usize = 10;
-const MAX_CLICK_PROBABILITY: f64 = 0.04;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct Config {
@@ -30,6 +31,7 @@ pub struct Config {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub opportunities: Option<u64>,
     pub pacing: PacingStrategy,
+    pub bidding: BiddingStrategy,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -87,7 +89,7 @@ impl HourlyActivity {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 pub struct Impression<'a> {
     pub timestamp: PstTimestamp,
     pub day: usize,
@@ -95,6 +97,11 @@ pub struct Impression<'a> {
     pub campaign_id: &'a str,
     pub ad_item_id: &'a str,
     pub category_id: &'a str,
+    pub base_bid_cents: u64,
+    pub pctr: f64,
+    pub pacing_factor: f64,
+    pub final_bid_cents: f64,
+    pub click_price_cents: u64,
     pub clicked: bool,
     pub spend_cents: u64,
 }
@@ -164,7 +171,7 @@ pub struct Report<'a> {
 
 #[derive(Clone, Copy, Debug)]
 struct Opportunity {
-    user_index: usize,
+    browsing_index: usize,
     timestamp: PstTimestamp,
 }
 
@@ -172,11 +179,12 @@ fn invalid(message: impl Into<String>) -> Error {
     Error::new(ErrorKind::InvalidInput, message.into())
 }
 
-fn browsing_opportunities(marketplace: &Marketplace) -> Result<Vec<&User>, Error> {
+fn browsing_opportunities(marketplace: &Marketplace) -> Result<Vec<usize>, Error> {
     let users: HashMap<_, _> = marketplace
         .users
         .iter()
-        .map(|user| (&user.id, user))
+        .enumerate()
+        .map(|(index, user)| (&user.id, index))
         .collect();
     let items: HashSet<_> = marketplace
         .organic_items
@@ -191,7 +199,7 @@ fn browsing_opportunities(marketplace: &Marketplace) -> Result<Vec<&User>, Error
         .browsing_events
         .iter()
         .map(|browse| {
-            let user = users
+            let user_index = *users
                 .get(&browse.user_id)
                 .ok_or_else(|| invalid(format!("unknown browsing user {}", browse.user_id)))?;
             if !items.contains(&browse.organic_item_id) {
@@ -200,7 +208,7 @@ fn browsing_opportunities(marketplace: &Marketplace) -> Result<Vec<&User>, Error
                     browse.organic_item_id
                 )));
             }
-            Ok(*user)
+            Ok(user_index)
         })
         .collect()
 }
@@ -274,10 +282,10 @@ fn generate_day_schedule(
 
     let mut schedule = Vec::with_capacity(count);
     if target_count.is_none() {
-        for user_index in 0..browsing_count {
+        for browsing_index in 0..browsing_count {
             let second_of_day = sample_pst_second_of_day(time_rng);
             schedule.push(Opportunity {
-                user_index,
+                browsing_index,
                 timestamp: PstTimestamp::new(day, second_of_day),
             });
         }
@@ -285,10 +293,10 @@ fn generate_day_schedule(
         while schedule.len() < count {
             order.shuffle(browsing_rng);
             let remaining = count - schedule.len();
-            for &user_index in order.iter().take(remaining) {
+            for &browsing_index in order.iter().take(remaining) {
                 let second_of_day = sample_pst_second_of_day(time_rng);
                 schedule.push(Opportunity {
-                    user_index,
+                    browsing_index,
                     timestamp: PstTimestamp::new(day, second_of_day),
                 });
             }
@@ -298,6 +306,28 @@ fn generate_day_schedule(
     schedule
 }
 
+fn add_eligible(
+    eligible: &mut Vec<usize>,
+    eligible_pos: &mut [Option<usize>],
+    campaign_index: usize,
+) {
+    debug_assert!(eligible_pos[campaign_index].is_none());
+    eligible_pos[campaign_index] = Some(eligible.len());
+    eligible.push(campaign_index);
+}
+
+fn remove_eligible(
+    eligible: &mut Vec<usize>,
+    eligible_pos: &mut [Option<usize>],
+    eligible_index: usize,
+) {
+    let removed = eligible.swap_remove(eligible_index);
+    eligible_pos[removed] = None;
+    if let Some(&swapped) = eligible.get(eligible_index) {
+        eligible_pos[swapped] = Some(eligible_index);
+    }
+}
+
 pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Error> {
     run_with_impressions(marketplace, config, |_| Ok(()))
 }
@@ -305,16 +335,29 @@ pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Erro
 pub fn run_with_impressions<'a, F>(
     marketplace: &'a Marketplace,
     config: Config,
+    on_impression: F,
+) -> Result<Report<'a>, Error>
+where
+    F: FnMut(&Impression<'_>) -> Result<(), Error>,
+{
+    run_with_ranking_and_impressions(marketplace, config, &DefaultRankingModel, on_impression)
+}
+
+pub fn run_with_ranking_and_impressions<'a, R, F>(
+    marketplace: &'a Marketplace,
+    config: Config,
+    ranking_model: &R,
     mut on_impression: F,
 ) -> Result<Report<'a>, Error>
 where
+    R: RankingModel + ?Sized,
     F: FnMut(&Impression<'_>) -> Result<(), Error>,
 {
     if marketplace.schema_version != 1 || marketplace.currency != "USD" {
         return Err(invalid("expected schema version 1 marketplace data in USD"));
     }
     if config.cpc_cents == 0 {
-        return Err(invalid("CPC must be positive"));
+        return Err(invalid("CPC / basebid must be positive"));
     }
     if config.impressions.is_some() && config.opportunities.is_some() {
         return Err(invalid(
@@ -330,21 +373,45 @@ where
     let mut time_rng = ads_rng.clone();
     time_rng.set_stream(3);
 
-    let browsing_users = browsing_opportunities(marketplace)?;
+    let browsing_user_indices = browsing_opportunities(marketplace)?;
     let mut campaigns = initialize_campaigns(marketplace, config, &mut ads_rng)?;
     let budget_cents = config
         .campaign_budget_cents
         .checked_mul(campaigns.len() as u64)
         .ok_or_else(|| invalid("total campaign budget does not fit in the report"))?;
 
+    // Precompute positive-pCTR candidates per user for autobidding auctions.
+    let positive_pctr_by_user: Vec<Vec<(usize, f64)>> =
+        if config.bidding == BiddingStrategy::AutobidV0 {
+            marketplace
+                .users
+                .iter()
+                .map(|user| {
+                    campaigns
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(campaign_index, campaign)| {
+                            let pctr = ranking_model.predict_pctr(user, campaign.item);
+                            (pctr.is_finite() && pctr > 0.0).then_some((campaign_index, pctr))
+                        })
+                        .collect()
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
     let mut days = Vec::with_capacity(DAYS);
     let mut hourly_totals = HourlyActivity::empty_day();
     let mut totals = Activity::default();
     let mut opportunity_count = 0;
+    let mut no_matching_category = 0;
     let mut insufficient_budget = 0;
     let mut pacing_throttled = 0;
     let mut daily_budget_exhausted = 0;
-    let mut order: Vec<_> = (0..browsing_users.len()).collect();
+    let mut order: Vec<_> = (0..browsing_user_indices.len()).collect();
+    let mut eligible_pos: Vec<Option<usize>> = vec![None; campaigns.len()];
+    let mut is_throttled: Vec<bool> = vec![false; campaigns.len()];
 
     for day in 1..=DAYS {
         let impression_quota = config
@@ -357,7 +424,7 @@ where
 
         let schedule = generate_day_schedule(
             day,
-            browsing_users.len(),
+            browsing_user_indices.len(),
             opportunity_target,
             &mut order,
             &mut browsing_rng,
@@ -367,6 +434,8 @@ where
         let mut affordable_campaigns = 0usize;
         let mut eligible = Vec::with_capacity(campaigns.len());
         let mut throttled: BinaryHeap<Reverse<(u32, usize)>> = BinaryHeap::new();
+        eligible_pos.fill(None);
+        is_throttled.fill(false);
 
         for (index, campaign) in campaigns.iter_mut().enumerate() {
             let can_afford_total = campaign.remaining_budget_cents >= config.cpc_cents;
@@ -377,7 +446,7 @@ where
                 PacingStrategy::None => {
                     campaign.daily[day - 1].daily_budget_cents = None;
                     if can_afford_total {
-                        eligible.push(index);
+                        add_eligible(&mut eligible, &mut eligible_pos, index);
                     }
                 }
                 PacingStrategy::Pacing1 => {
@@ -395,7 +464,7 @@ where
                         config.cpc_cents,
                     ) == Some(0)
                     {
-                        eligible.push(index);
+                        add_eligible(&mut eligible, &mut eligible_pos, index);
                     }
                 }
             }
@@ -420,7 +489,8 @@ where
             while let Some(&Reverse((unlock_second, campaign_idx))) = throttled.peek() {
                 if unlock_second <= second_of_day {
                     throttled.pop();
-                    eligible.push(campaign_idx);
+                    is_throttled[campaign_idx] = false;
+                    add_eligible(&mut eligible, &mut eligible_pos, campaign_idx);
                 } else {
                     break;
                 }
@@ -429,28 +499,112 @@ where
             daily.opportunities += 1;
             daily.hourly[hour].opportunities += 1;
 
-            if eligible.is_empty() {
-                if !throttled.is_empty() {
-                    daily.pacing_throttled += 1;
-                    daily.hourly[hour].pacing_throttled += 1;
-                } else if affordable_campaigns > 0 {
-                    daily.daily_budget_exhausted += 1;
-                    daily.hourly[hour].daily_budget_exhausted += 1;
-                } else {
-                    daily.insufficient_budget += 1;
-                    daily.hourly[hour].insufficient_budget += 1;
+            let user_index = browsing_user_indices[opportunity.browsing_index];
+            let user = &marketplace.users[user_index];
+
+            let winner: Option<AuctionWinner> = match config.bidding {
+                BiddingStrategy::Basebid => {
+                    if eligible.is_empty() {
+                        None
+                    } else {
+                        let eligible_index = ads_rng.random_range(0..eligible.len());
+                        let campaign_index = eligible[eligible_index];
+                        let campaign = &campaigns[campaign_index];
+                        let daily_budget = campaign.daily[day - 1].daily_budget_cents.unwrap_or(0);
+                        let daily_spend = campaign.daily[day - 1].activity.spend_cents;
+                        let pacing_factor = config.pacing.pacing_factor(
+                            daily_spend,
+                            daily_budget,
+                            campaign.remaining_budget_cents,
+                            config.cpc_cents,
+                            second_of_day,
+                        );
+                        let pctr = ranking_model.predict_pctr(user, campaign.item);
+                        let bid = compute_bid(
+                            BiddingStrategy::Basebid,
+                            config.cpc_cents,
+                            pctr,
+                            pacing_factor,
+                        );
+                        Some(AuctionWinner {
+                            candidate_index: eligible_index,
+                            bid,
+                        })
+                    }
+                }
+                BiddingStrategy::AutobidV0 => {
+                    let candidates = &positive_pctr_by_user[user_index];
+                    run_first_price_auction(
+                        candidates.iter().filter_map(|&(campaign_index, pctr)| {
+                            let eligible_index = eligible_pos[campaign_index]?;
+                            let campaign = &campaigns[campaign_index];
+                            let daily_budget =
+                                campaign.daily[day - 1].daily_budget_cents.unwrap_or(0);
+                            let daily_spend = campaign.daily[day - 1].activity.spend_cents;
+                            let pacing_factor = config.pacing.pacing_factor(
+                                daily_spend,
+                                daily_budget,
+                                campaign.remaining_budget_cents,
+                                config.cpc_cents,
+                                second_of_day,
+                            );
+                            let bid = compute_bid(
+                                BiddingStrategy::AutobidV0,
+                                config.cpc_cents,
+                                pctr,
+                                pacing_factor,
+                            );
+                            (bid.click_price_cents <= campaign.remaining_budget_cents)
+                                .then_some((eligible_index, bid))
+                        }),
+                        &mut ads_rng,
+                    )
+                }
+            };
+
+            let Some(winner) = winner else {
+                match config.bidding {
+                    BiddingStrategy::Basebid => {
+                        if !throttled.is_empty() {
+                            daily.pacing_throttled += 1;
+                            daily.hourly[hour].pacing_throttled += 1;
+                        } else if affordable_campaigns > 0 {
+                            daily.daily_budget_exhausted += 1;
+                            daily.hourly[hour].daily_budget_exhausted += 1;
+                        } else {
+                            daily.insufficient_budget += 1;
+                            daily.hourly[hour].insufficient_budget += 1;
+                        }
+                    }
+                    BiddingStrategy::AutobidV0 => {
+                        let candidates = &positive_pctr_by_user[user_index];
+                        if candidates.is_empty() {
+                            daily.no_matching_category += 1;
+                            daily.hourly[hour].no_matching_category += 1;
+                        } else if candidates.iter().any(|&(c_idx, _)| is_throttled[c_idx]) {
+                            daily.pacing_throttled += 1;
+                            daily.hourly[hour].pacing_throttled += 1;
+                        } else if candidates.iter().any(|&(c_idx, _)| {
+                            campaigns[c_idx].remaining_budget_cents >= config.cpc_cents
+                        }) {
+                            daily.daily_budget_exhausted += 1;
+                            daily.hourly[hour].daily_budget_exhausted += 1;
+                        } else {
+                            daily.insufficient_budget += 1;
+                            daily.hourly[hour].insufficient_budget += 1;
+                        }
+                    }
                 }
                 continue;
-            }
+            };
 
-            let eligible_index = ads_rng.random_range(0..eligible.len());
+            let eligible_index = winner.candidate_index;
             let campaign_index = eligible[eligible_index];
             let campaign = &mut campaigns[campaign_index];
-            let user = browsing_users[opportunity.user_index];
             let score = score_preference(user, campaign.item);
             let cost = click_rng
                 .random_bool(MAX_CLICK_PROBABILITY * score)
-                .then_some(config.cpc_cents);
+                .then_some(winner.bid.click_price_cents);
 
             campaign.totals.impression(cost);
             campaign.daily[day - 1].activity.impression(cost);
@@ -462,7 +616,7 @@ where
                 campaign.remaining_budget_cents -= cost;
                 if campaign.remaining_budget_cents < config.cpc_cents {
                     affordable_campaigns -= 1;
-                    eligible.swap_remove(eligible_index);
+                    remove_eligible(&mut eligible, &mut eligible_pos, eligible_index);
                 } else if config.pacing == PacingStrategy::Pacing1 {
                     let daily_budget = campaign.daily[day - 1].daily_budget_cents.unwrap_or(0);
                     let daily_spend = campaign.daily[day - 1].activity.spend_cents;
@@ -474,11 +628,12 @@ where
                     ) {
                         Some(unlock_second) if unlock_second <= second_of_day => {}
                         Some(unlock_second) => {
-                            eligible.swap_remove(eligible_index);
+                            remove_eligible(&mut eligible, &mut eligible_pos, eligible_index);
+                            is_throttled[campaign_index] = true;
                             throttled.push(Reverse((unlock_second, campaign_index)));
                         }
                         None => {
-                            eligible.swap_remove(eligible_index);
+                            remove_eligible(&mut eligible, &mut eligible_pos, eligible_index);
                         }
                     }
                 }
@@ -491,6 +646,11 @@ where
                 campaign_id: &campaign.id,
                 ad_item_id: campaign.ad_item_id,
                 category_id: campaign.category_id,
+                base_bid_cents: winner.bid.base_bid_cents,
+                pctr: winner.bid.pctr,
+                pacing_factor: winner.bid.pacing_factor,
+                final_bid_cents: winner.bid.final_bid_cents,
+                click_price_cents: winner.bid.click_price_cents,
                 clicked: cost.is_some(),
                 spend_cents: cost.unwrap_or(0),
             };
@@ -503,7 +663,7 @@ where
             return Err(invalid(format!(
                 concat!(
                     "impression target cannot be reached on day {}: ",
-                    "delivered {} of {} impressions (insufficient_budget={}, pacing_throttled={}, daily_budget_exhausted={})"
+                    "delivered {} of {} impressions (insufficient_budget={}, pacing_throttled={}, daily_budget_exhausted={}, no_matching_category={})"
                 ),
                 day,
                 daily.activity.impressions,
@@ -511,10 +671,12 @@ where
                 daily.insufficient_budget,
                 daily.pacing_throttled,
                 daily.daily_budget_exhausted,
+                daily.no_matching_category,
             )));
         }
 
         opportunity_count += daily.opportunities;
+        no_matching_category += daily.no_matching_category;
         insufficient_budget += daily.insufficient_budget;
         pacing_throttled += daily.pacing_throttled;
         daily_budget_exhausted += daily.daily_budget_exhausted;
@@ -533,7 +695,7 @@ where
             budget_cents,
             remaining_budget_cents: budget_cents - totals.spend_cents,
             opportunities: opportunity_count,
-            no_matching_category: 0,
+            no_matching_category,
             insufficient_budget,
             pacing_throttled,
             daily_budget_exhausted,
@@ -549,11 +711,16 @@ where
 mod tests {
     use std::collections::{HashMap, HashSet};
 
-    use ads_simulator::generate_marketplace;
+    use ads_simulator::{Item, User, generate_marketplace};
 
-    use super::{Activity, CAMPAIGNS_PER_ADVERTISER, Config, DAYS, run, run_with_impressions};
+    use super::{
+        Activity, CAMPAIGNS_PER_ADVERTISER, Config, DAYS, run, run_with_impressions,
+        run_with_ranking_and_impressions,
+    };
     use crate::{
+        bidding::BiddingStrategy,
         pacing::PacingStrategy,
+        ranking::RankingModel,
         timestamp::{HOURS_PER_DAY, PstTimestamp, SECONDS_PER_DAY},
     };
 
@@ -565,6 +732,7 @@ mod tests {
             impressions: Some(1_000_000),
             opportunities: None,
             pacing,
+            bidding: BiddingStrategy::Basebid,
         }
     }
 
@@ -591,6 +759,7 @@ mod tests {
             impressions: Some(3_000),
             opportunities: None,
             pacing: PacingStrategy::None,
+            bidding: BiddingStrategy::Basebid,
         };
         let initial = run(&marketplace, config).unwrap();
         assert!(initial.summary.activity.clicks > 0);
@@ -641,6 +810,7 @@ mod tests {
             impressions: Some(300),
             opportunities: None,
             pacing: PacingStrategy::Pacing1,
+            bidding: BiddingStrategy::Basebid,
         };
         let matching = run(&marketplace, config).unwrap();
         let matching_json = serde_json::to_value(matching).unwrap();
@@ -777,6 +947,7 @@ mod tests {
             impressions: Some(60_000),
             opportunities: None,
             pacing: PacingStrategy::Pacing1,
+            bidding: BiddingStrategy::Basebid,
         };
         let mut previous: Option<PstTimestamp> = None;
         let mut by_hour = [0u64; HOURS_PER_DAY];
@@ -818,8 +989,6 @@ mod tests {
 
     #[test]
     fn pacing_1_enforces_daily_budget_and_even_intraday_spend_curve() {
-        // Construct a single-advertiser marketplace where every user prefers the
-        // ad category so campaigns generate heavy click demand across the day.
         let mut marketplace = generate_marketplace(42);
         marketplace.advertisers.truncate(1);
         let target_category = marketplace.advertisers[0].catalog[0].category_id.clone();
@@ -830,11 +999,6 @@ mod tests {
             user.preferred_category_ids = vec![target_category.clone()];
         }
 
-        // $300 total budget over 30 days -> $10/day (10 clicks/day at $1 CPC).
-        // With 12,000 daily opportunities across 10 campaigns (1,200 opps/campaign/day
-        // at 4% CTR = ~48 expected clicks/campaign/day), unpaced burns the entire
-        // 30-day budget in the first week and blows daily spend during the morning peak,
-        // whereas Pacing-1 spreads spend across all 30 days and evenly through each day.
         let unpaced = run(
             &marketplace,
             Config {
@@ -844,6 +1008,7 @@ mod tests {
                 impressions: None,
                 opportunities: None,
                 pacing: PacingStrategy::None,
+                bidding: BiddingStrategy::Basebid,
             },
         )
         .unwrap();
@@ -861,6 +1026,7 @@ mod tests {
                 impressions: None,
                 opportunities: None,
                 pacing: PacingStrategy::Pacing1,
+                bidding: BiddingStrategy::Basebid,
             },
             |impression| {
                 if impression.clicked {
@@ -876,16 +1042,13 @@ mod tests {
         )
         .unwrap();
 
-        // Pacing-1 delivers impressions on every single day (all 30 days).
         assert!(paced.days.iter().all(|day| day.activity.impressions > 0));
         assert!(paced.summary.pacing_throttled > 0);
 
-        // Verify per-campaign daily budget cap and exact linear intraday pacing invariant:
-        // before every click at second `t`, cumulative daily spend <= daily_budget * t / 86_400.
         let mut spend_before_click: HashMap<(usize, String), u64> = HashMap::new();
         for (day, campaign_id, second_of_day, spend_cents) in click_events {
             let entry = spend_before_click.entry((day, campaign_id)).or_insert(0);
-            let daily_budget = 1_000u64; // 30_000 / 30
+            let daily_budget = 1_000u64;
             assert!(
                 u128::from(*entry) * u128::from(SECONDS_PER_DAY)
                     <= u128::from(daily_budget) * u128::from(second_of_day),
@@ -895,17 +1058,11 @@ mod tests {
             assert!(*entry <= daily_budget);
         }
 
-        // Because traffic dies out around 6pm PST while Pacing-1 reserves budget
-        // evenly across 24 hours, Pacing-1 delivers spend into the afternoon (12:00–18:00 PST)
-        // whereas on Day 1 unpaced burns far more heavily in the morning peak.
         let paced_afternoon_spend: u64 = paced.hourly[12..18]
             .iter()
             .map(|h| h.activity.spend_cents)
             .sum();
         assert!(paced_afternoon_spend > 0);
-        // Under Pacing-1 with 10 clicks/day ($10/day), at most 8 clicks can unlock
-        // before 18:00 PST (since click 9 unlocks at 19:12 PST), so daily spend per
-        // campaign reflects even 24h pacing rather than exhausting at 8am.
         let paced_morning_share = paced.hourly[..12]
             .iter()
             .map(|h| h.activity.spend_cents)
@@ -923,36 +1080,174 @@ mod tests {
     }
 
     #[test]
+    fn autobid_v0_selects_higher_pctr_ads_and_outperforms_basebid_ctr() {
+        let marketplace = generate_marketplace(42);
+        let base = run(
+            &marketplace,
+            Config {
+                seed: 42,
+                campaign_budget_cents: 10_000,
+                cpc_cents: 100,
+                impressions: None,
+                opportunities: Some(120_000),
+                pacing: PacingStrategy::Pacing1,
+                bidding: BiddingStrategy::Basebid,
+            },
+        )
+        .unwrap();
+
+        let mut seen_impressions = 0u64;
+        let autobid = run_with_impressions(
+            &marketplace,
+            Config {
+                seed: 42,
+                campaign_budget_cents: 10_000,
+                cpc_cents: 100,
+                impressions: None,
+                opportunities: Some(120_000),
+                pacing: PacingStrategy::Pacing1,
+                bidding: BiddingStrategy::AutobidV0,
+            },
+            |impression| {
+                assert_eq!(impression.base_bid_cents, 100);
+                assert_eq!(impression.pacing_factor, 1.0);
+                assert!((impression.pctr - 0.04).abs() < 1e-12);
+                assert!((impression.final_bid_cents - 4.0).abs() < 1e-12);
+                assert_eq!(impression.click_price_cents, 100);
+                seen_impressions += 1;
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert_eq!(seen_impressions, autobid.summary.activity.impressions);
+        assert_eq!(autobid.summary.opportunities, 120_000);
+        assert_eq!(
+            autobid.summary.activity.impressions
+                + autobid.summary.no_matching_category
+                + autobid.summary.insufficient_budget
+                + autobid.summary.pacing_throttled
+                + autobid.summary.daily_budget_exhausted,
+            autobid.summary.opportunities
+        );
+
+        let base_ctr =
+            base.summary.activity.clicks as f64 / base.summary.activity.impressions as f64;
+        let autobid_ctr =
+            autobid.summary.activity.clicks as f64 / autobid.summary.activity.impressions as f64;
+        // Basebid averages ~0.2% CTR across 100 categories; autobid-v0 targets
+        // preferred categories via pCTR and achieves ~4.0% CTR.
+        assert!(base_ctr < 0.005, "unexpected base CTR: {base_ctr}");
+        assert!(
+            autobid_ctr > 0.035,
+            "expected ~4% autobid CTR, got {autobid_ctr}"
+        );
+        assert_eq!(
+            autobid.summary.activity.spend_cents,
+            autobid.summary.activity.clicks * 100
+        );
+    }
+
+    #[test]
+    fn autobid_v0_uses_ranking_model_pctr_in_first_price_auction() {
+        struct ItemSpecificRankingModel {
+            high_item_id: String,
+        }
+        impl RankingModel for ItemSpecificRankingModel {
+            fn predict_pctr(&self, _user: &User, item: &Item) -> f64 {
+                if item.id == self.high_item_id {
+                    0.08
+                } else {
+                    0.02
+                }
+            }
+        }
+
+        let mut marketplace = generate_marketplace(42);
+        marketplace.advertisers.truncate(1);
+        // Pick the exact first campaign's item by doing a quick basebid run to read it,
+        // or give every catalog item of advertiser-01 the same category and inspect the chosen ad.
+        let preview = run(
+            &marketplace,
+            Config {
+                seed: 42,
+                campaign_budget_cents: 10_000,
+                cpc_cents: 100,
+                impressions: Some(30),
+                opportunities: None,
+                pacing: PacingStrategy::None,
+                bidding: BiddingStrategy::Basebid,
+            },
+        )
+        .unwrap();
+        let top_campaign_id = preview.campaigns[0].id.clone();
+        let top_item_id = preview.campaigns[0].ad_item_id.to_owned();
+
+        let ranking_model = ItemSpecificRankingModel {
+            high_item_id: top_item_id,
+        };
+        let mut winning_campaigns = HashSet::new();
+        let report = run_with_ranking_and_impressions(
+            &marketplace,
+            Config {
+                seed: 42,
+                campaign_budget_cents: 10_000,
+                cpc_cents: 100,
+                impressions: Some(300),
+                opportunities: None,
+                pacing: PacingStrategy::None,
+                bidding: BiddingStrategy::AutobidV0,
+            },
+            &ranking_model,
+            |impression| {
+                winning_campaigns.insert(impression.campaign_id.to_owned());
+                assert!((impression.final_bid_cents - 8.0).abs() < 1e-12);
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert_eq!(report.summary.activity.impressions, 300);
+        // Because the high-pCTR campaign never exhausts its $100 budget in 300
+        // impressions, it wins 100% of auctions under 1st-price bidding-autobid-v0.
+        assert_eq!(winning_campaigns.len(), 1);
+        assert!(winning_campaigns.contains(&top_campaign_id));
+    }
+
+    #[test]
     fn unaffordable_campaigns_leave_budgets_intact_and_cannot_meet_a_target() {
         let marketplace = generate_marketplace(42);
         for pacing in [PacingStrategy::None, PacingStrategy::Pacing1] {
-            let mut config = Config {
-                seed: 42,
-                campaign_budget_cents: 72,
-                cpc_cents: 73,
-                impressions: None,
-                opportunities: None,
-                pacing,
-            };
-            let report = run(&marketplace, config).unwrap();
-            assert_eq!(
-                report.summary.opportunities,
-                (marketplace.browsing_events.len() * DAYS) as u64
-            );
-            assert_eq!(report.summary.activity, Activity::default());
-            assert_eq!(
-                report.summary.remaining_budget_cents,
-                report.summary.budget_cents
-            );
-            assert!(report.summary.insufficient_budget > 0);
+            for bidding in [BiddingStrategy::Basebid, BiddingStrategy::AutobidV0] {
+                let mut config = Config {
+                    seed: 42,
+                    campaign_budget_cents: 72,
+                    cpc_cents: 73,
+                    impressions: None,
+                    opportunities: None,
+                    pacing,
+                    bidding,
+                };
+                let report = run(&marketplace, config).unwrap();
+                assert_eq!(
+                    report.summary.opportunities,
+                    (marketplace.browsing_events.len() * DAYS) as u64
+                );
+                assert_eq!(report.summary.activity, Activity::default());
+                assert_eq!(
+                    report.summary.remaining_budget_cents,
+                    report.summary.budget_cents
+                );
+                assert!(report.summary.insufficient_budget > 0);
 
-            config.impressions = Some(1);
-            let error = run(&marketplace, config).unwrap_err();
-            assert!(
-                error
-                    .to_string()
-                    .contains("target cannot be reached on day 1")
-            );
+                config.impressions = Some(1);
+                let error = run(&marketplace, config).unwrap_err();
+                assert!(
+                    error
+                        .to_string()
+                        .contains("target cannot be reached on day 1")
+                );
+            }
         }
     }
 }

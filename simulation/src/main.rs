@@ -1,4 +1,6 @@
+mod bidding;
 mod pacing;
+mod ranking;
 mod simulation;
 mod timestamp;
 
@@ -9,6 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use bidding::BiddingStrategy;
 use clap::Parser;
 use pacing::PacingStrategy;
 use simulation::{Config, run, run_with_impressions};
@@ -31,8 +34,8 @@ struct Args {
     /// Upfront budget for each campaign, in USD cents.
     #[arg(long, default_value_t = 10_000)]
     campaign_budget_cents: u64,
-    /// Price of each click, in USD cents.
-    #[arg(long, default_value_t = 100)]
+    /// Campaign basebid / price of each click, in USD cents.
+    #[arg(long, alias = "base-bid-cents", default_value_t = 100)]
     cpc_cents: u64,
     /// Exact number of impressions to deliver across the 30 days.
     #[arg(long, conflicts_with = "opportunities")]
@@ -43,6 +46,9 @@ struct Args {
     /// Budget pacing strategy.
     #[arg(long, value_enum, default_value_t = PacingStrategy::Pacing1)]
     pacing: PacingStrategy,
+    /// Bidding strategy.
+    #[arg(long, value_enum, default_value_t = BiddingStrategy::Basebid)]
+    bidding: BiddingStrategy,
 }
 
 fn parent_dir(path: &Path) -> &Path {
@@ -61,6 +67,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         impressions: args.impressions,
         opportunities: args.opportunities,
         pacing: args.pacing,
+        bidding: args.bidding,
     };
 
     let report = if let Some(impressions_path) = args.impressions_output {
