@@ -9,8 +9,8 @@ use sim_agent::{
     AgentConfig, BiddingStrategy, DEFAULT_BIDDING, DEFAULT_CPC_CENTS, DEFAULT_IMPRESSIONS,
     DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS, DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_OUTPUT_DIR,
     DEFAULT_PACING, DEFAULT_RANKER, DEFAULT_RETRIEVAL, DEFAULT_SEED, DEFAULT_SLATE_SIZE,
-    PacingStrategy, RankerStrategy, RetrievalStrategy, RunArtifacts, ScoringStrategy,
-    run_and_export,
+    DEFAULT_WORLD_MODEL, PacingStrategy, RankerStrategy, RetrievalStrategy, RunArtifacts,
+    ScoringStrategy, WorldModel, run_and_export,
 };
 
 #[derive(Debug, Parser)]
@@ -82,6 +82,10 @@ struct Args {
     /// Maximum distinct funded campaigns returned per ad-server request.
     #[arg(long, default_value_t = DEFAULT_SLATE_SIZE)]
     slate_size: usize,
+
+    /// Click-oracle world model (world-model-v0/v0 or world-model-v1/v1).
+    #[arg(long, default_value_t = DEFAULT_WORLD_MODEL)]
+    world_model: WorldModel,
 }
 
 impl Args {
@@ -116,6 +120,7 @@ impl Args {
             pacing: self.pacing,
             bidding: self.bidding,
             slate_size: self.slate_size,
+            world_model: self.world_model,
         }
     }
 }
@@ -169,8 +174,9 @@ fn print_summary(config: &AgentConfig, artifacts: &RunArtifacts) {
     println!("  Marketplace : {marketplace_desc}");
     println!("  Strategy    : {}", ts.strategy);
     println!(
-        "  Config      : sim_seed={}, retrieval={}, ranking={}, scoring={}, pacing={}, bidding={}, slate={}, budget={}, cpc={}, mode={mode_desc}",
+        "  Config      : sim_seed={}, world_model={}, retrieval={}, ranking={}, scoring={}, pacing={}, bidding={}, slate={}, budget={}, cpc={}, mode={mode_desc}",
         ts.config.sim_seed,
+        ts.config.world_model,
         ts.config.retrieval,
         ts.config.ranker,
         ts.config.scoring,

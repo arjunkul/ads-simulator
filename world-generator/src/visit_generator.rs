@@ -12,10 +12,12 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 
+use crate::marketplace::Marketplace;
 use crate::timestamp::{SECONDS_PER_DAY, sample_pst_second_of_day};
 use crate::user_activity_oracle::{
-    CLICK_RNG_STREAM, INTEREST_COUNT, MAX_CLICK_PROBABILITY, PREFERENCE_RNG_STREAM,
-    UserActivityOracle, UserPreferenceProfile, generate_user_preferences,
+    CLICK_RNG_STREAM, DEFAULT_WORLD_MODEL, INTEREST_COUNT, MAX_CLICK_PROBABILITY,
+    PREFERENCE_RNG_STREAM, UserActivityOracle, UserPreferenceProfile, WorldModel,
+    WorldModelV1Params, generate_user_preferences,
 };
 
 pub const DEFAULT_DAYS: usize = 30;
@@ -36,6 +38,7 @@ pub struct VisitGeneratorSpec {
     pub default_days: usize,
     pub default_daily_requests: usize,
     pub default_seed: u64,
+    pub default_world_model: WorldModel,
     pub interest_count: usize,
     pub rng_stream: u64,
     pub click_rng_stream: u64,
@@ -54,6 +57,7 @@ pub fn visit_generator_spec() -> VisitGeneratorSpec {
         default_days: DEFAULT_DAYS,
         default_daily_requests: DEFAULT_DAILY_REQUESTS,
         default_seed: DEFAULT_SEED,
+        default_world_model: DEFAULT_WORLD_MODEL,
         interest_count: INTEREST_COUNT,
         rng_stream: RNG_STREAM,
         click_rng_stream: CLICK_RNG_STREAM,
@@ -78,6 +82,7 @@ pub trait AdServingTarget {
     fn ad_slot_position(ad: &Self::Ad) -> usize;
     fn ad_campaign_index(ad: &Self::Ad) -> usize;
     fn ad_category_id(ad: &Self::Ad) -> &str;
+    fn ad_advertiser_id(ad: &Self::Ad) -> &str;
     fn record_impression(
         &mut self,
         day: usize,
@@ -90,12 +95,15 @@ pub trait AdServingTarget {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VisitGeneratorConfig {
     pub seed: u64,
-    /// Optional seed used to generate visitor preferred categories (defaults to `seed`).
+    /// Optional seed used to generate visitor preferred categories and `world-model-v1` noise
+    /// parameters (defaults to `seed`).
     pub preference_seed: Option<u64>,
     pub days: usize,
     pub daily_requests: usize,
     pub target_impressions: Option<u64>,
     pub max_click_probability: f64,
+    #[serde(default)]
+    pub world_model: WorldModel,
 }
 
 impl Default for VisitGeneratorConfig {
@@ -107,6 +115,7 @@ impl Default for VisitGeneratorConfig {
             daily_requests: DEFAULT_DAILY_REQUESTS,
             target_impressions: None,
             max_click_probability: MAX_CLICK_PROBABILITY,
+            world_model: DEFAULT_WORLD_MODEL,
         }
     }
 }
@@ -151,6 +160,35 @@ pub struct VisitGenerator {
 }
 
 impl VisitGenerator {
+    /// Construct a new [`VisitGenerator`] directly from a [`Marketplace`], preserving full retail
+    /// group, category, and advertiser metadata for [`WorldModel::V1`].
+    pub fn from_marketplace(
+        marketplace: &Marketplace,
+        config: VisitGeneratorConfig,
+    ) -> Result<Self, Error> {
+        if config.days == 0 {
+            return Err(invalid("days must be positive"));
+        }
+        let pref_seed = config.preference_seed.unwrap_or(config.seed);
+        let user_activity_oracle = UserActivityOracle::from_marketplace(
+            marketplace,
+            pref_seed,
+            config.seed,
+            config.max_click_probability,
+            config.world_model,
+        )?;
+        let mut rng = ChaCha8Rng::seed_from_u64(config.seed);
+        rng.set_stream(RNG_STREAM);
+
+        Ok(Self {
+            user_activity_oracle,
+            config,
+            rng,
+            next_request_id: 1,
+            total_impressions_delivered: 0,
+        })
+    }
+
     /// Construct a new [`VisitGenerator`] from `user_ids` and marketplace `category_ids`,
     /// generating each visitor's preferred categories internally on `PREFERENCE_RNG_STREAM`.
     ///
@@ -164,7 +202,11 @@ impl VisitGenerator {
     ) -> Result<Self, Error> {
         let pref_seed = config.preference_seed.unwrap_or(config.seed);
         let profiles = generate_user_preferences(&user_ids, &category_ids, pref_seed)?;
-        Self::with_preferences(profiles, config)
+        let v1_params = match config.world_model {
+            WorldModel::V0 => None,
+            WorldModel::V1 => Some(WorldModelV1Params::from_category_ids(&category_ids, pref_seed)),
+        };
+        Self::with_preferences_and_v1_params(profiles, config, v1_params)
     }
 
     /// Construct a new [`VisitGenerator`] with caller-supplied [`UserPreferenceProfile`]s.
@@ -172,13 +214,23 @@ impl VisitGenerator {
         profiles: Vec<UserPreferenceProfile>,
         config: VisitGeneratorConfig,
     ) -> Result<Self, Error> {
+        Self::with_preferences_and_v1_params(profiles, config, None)
+    }
+
+    fn with_preferences_and_v1_params(
+        profiles: Vec<UserPreferenceProfile>,
+        config: VisitGeneratorConfig,
+        v1_params: Option<WorldModelV1Params>,
+    ) -> Result<Self, Error> {
         if config.days == 0 {
             return Err(invalid("days must be positive"));
         }
-        let user_activity_oracle = UserActivityOracle::with_max_click_probability(
+        let user_activity_oracle = UserActivityOracle::with_world_model(
             profiles,
             config.seed,
             config.max_click_probability,
+            config.world_model,
+            v1_params,
         )?;
 
         let mut rng = ChaCha8Rng::seed_from_u64(config.seed);
@@ -191,6 +243,11 @@ impl VisitGenerator {
             next_request_id: 1,
             total_impressions_delivered: 0,
         })
+    }
+
+    /// Active [`WorldModel`] used by the internal [`UserActivityOracle`].
+    pub fn world_model(&self) -> WorldModel {
+        self.user_activity_oracle.world_model()
     }
 
     /// All visitor preference profiles owned by this generator's oracle.
@@ -302,9 +359,11 @@ impl VisitGenerator {
                     }
                     for ad in ads {
                         stats.opportunities += 1;
-                        let clicked = self
-                            .user_activity_oracle
-                            .evaluate_click_for_index(user_index, T::ad_category_id(&ad));
+                        let clicked = self.user_activity_oracle.evaluate_click_for_index(
+                            user_index,
+                            T::ad_category_id(&ad),
+                            T::ad_advertiser_id(&ad),
+                        );
                         let cost =
                             ad_server.record_impression(day, T::ad_campaign_index(&ad), clicked)?;
                         let impression = GeneratedImpression {
@@ -355,9 +414,11 @@ impl VisitGenerator {
                             break;
                         }
                         stats.opportunities += 1;
-                        let clicked = self
-                            .user_activity_oracle
-                            .evaluate_click_for_index(user_index, T::ad_category_id(&ad));
+                        let clicked = self.user_activity_oracle.evaluate_click_for_index(
+                            user_index,
+                            T::ad_category_id(&ad),
+                            T::ad_advertiser_id(&ad),
+                        );
                         let cost =
                             ad_server.record_impression(day, T::ad_campaign_index(&ad), clicked)?;
                         let impression = GeneratedImpression {
@@ -395,7 +456,8 @@ mod tests {
 
     use crate::marketplace::generate_marketplace;
     use crate::user_activity_oracle::{
-        CLICK_RNG_STREAM, INTEREST_COUNT, MAX_CLICK_PROBABILITY, PREFERENCE_RNG_STREAM,
+        CLICK_RNG_STREAM, DEFAULT_WORLD_MODEL, INTEREST_COUNT, MAX_CLICK_PROBABILITY,
+        PREFERENCE_RNG_STREAM, WorldModel,
     };
     use crate::visit_generator::{
         AdServingTarget, DEFAULT_DAILY_REQUESTS, RNG_STREAM, VisitGenerator, VisitGeneratorConfig,
@@ -407,6 +469,7 @@ mod tests {
         slot_position: usize,
         campaign_index: usize,
         category_id: String,
+        advertiser_id: String,
     }
 
     struct MockAdServer {
@@ -440,6 +503,7 @@ mod tests {
                     slot_position: i + 1,
                     campaign_index: i,
                     category_id: format!("category-{:03}", (i % 100) + 1),
+                    advertiser_id: format!("advertiser-{:02}", (i % 50) + 1),
                 })
                 .collect();
             (user_id.to_owned(), ads)
@@ -459,6 +523,10 @@ mod tests {
 
         fn ad_category_id(ad: &Self::Ad) -> &str {
             &ad.category_id
+        }
+
+        fn ad_advertiser_id(ad: &Self::Ad) -> &str {
+            &ad.advertiser_id
         }
 
         fn record_impression(
@@ -521,6 +589,7 @@ mod tests {
                 daily_requests: DEFAULT_DAILY_REQUESTS,
                 target_impressions: Some(1_000),
                 max_click_probability: 0.0,
+                world_model: WorldModel::V0,
             },
         )
         .unwrap();
@@ -552,11 +621,42 @@ mod tests {
     }
 
     #[test]
+    fn from_marketplace_with_world_model_v1_runs_deterministically_with_clicks() {
+        let mp = generate_marketplace(42);
+        let mut server_a = MockAdServer {
+            slate_size: 20,
+            cpc_cents: 100,
+            empty: false,
+        };
+        let mut server_b = MockAdServer {
+            slate_size: 20,
+            cpc_cents: 100,
+            empty: false,
+        };
+        let cfg = VisitGeneratorConfig {
+            seed: 42,
+            preference_seed: Some(42),
+            world_model: WorldModel::V1,
+            ..VisitGeneratorConfig::default()
+        };
+        let mut gen_a = VisitGenerator::from_marketplace(&mp, cfg).unwrap();
+        let mut gen_b = VisitGenerator::from_marketplace(&mp, cfg).unwrap();
+        assert_eq!(gen_a.world_model(), WorldModel::V1);
+
+        let stats_a = gen_a.run_day(1, &mut server_a, |_| {}).unwrap();
+        let stats_b = gen_b.run_day(1, &mut server_b, |_| {}).unwrap();
+        assert_eq!(stats_a, stats_b);
+        assert_eq!(stats_a.impressions, 12_000);
+        assert!(stats_a.clicks > 0);
+    }
+
+    #[test]
     fn spec_reports_visit_generator_constants() {
         let spec = visit_generator_spec();
         assert_eq!(spec.crate_name, "world-generator");
         assert_eq!(spec.module_name, "visit_generator");
         assert_eq!(spec.binary_name, "visit-generator");
+        assert_eq!(spec.default_world_model, DEFAULT_WORLD_MODEL);
         assert!(spec.user_independent_arrivals);
         assert_eq!(spec.interest_count, INTEREST_COUNT);
         assert_eq!(spec.rng_stream, RNG_STREAM);

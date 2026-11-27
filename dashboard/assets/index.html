@@ -174,6 +174,13 @@
           <input id="runner-slate-size" name="slate_size" type="number" step="1" min="1" max="500" value="20">
         </div>
         <div class="runner-field">
+          <label for="runner-world-model">World Model</label>
+          <select id="runner-world-model" name="world_model">
+            <option value="world-model-v0" selected>world-model-v0 · Binary (4% / 0%)</option>
+            <option value="world-model-v1">world-model-v1 · Noisy Group×Cat×Adv</option>
+          </select>
+        </div>
+        <div class="runner-field">
           <label class="runner-checkbox" for="runner-natural">
             <input id="runner-natural" name="natural_replay" type="checkbox">
             <span>Natural Requests (no target)</span>

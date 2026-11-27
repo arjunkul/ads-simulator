@@ -20,14 +20,16 @@ pub use ad_server::{
 pub use simulation::{
     Activity, CAMPAIGNS_PER_ADVERTISER, Campaign, Config, DAYS, DEFAULT_CPC_CENTS,
     DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS, DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_PACING,
-    DEFAULT_RANKER, DEFAULT_SCORING, DEFAULT_SEED, DEFAULT_SLATE_SIZE, DailyActivity, Day,
-    MAX_CLICK_PROBABILITY, OwnedCampaign, OwnedReport, Report, SCHEMA_VERSION, SimulationSpec,
-    Summary, run, run_with_log_dir, simulation_spec,
+    DEFAULT_RANKER, DEFAULT_SCORING, DEFAULT_SEED, DEFAULT_SLATE_SIZE, DEFAULT_WORLD_MODEL,
+    DailyActivity, Day, MAX_CLICK_PROBABILITY, OwnedCampaign, OwnedReport, Report, SCHEMA_VERSION,
+    SimulationSpec, Summary, run, run_with_log_dir, simulation_spec,
 };
 pub use world_generator::{
-    CLICK_RNG_STREAM, DEFAULT_DAILY_REQUESTS, DayGenerationStats, GeneratedImpression,
-    INTEREST_COUNT, PREFERENCE_RNG_STREAM, UserActivityOracle, UserActivityOracleSpec,
-    UserPreferenceProfile, VisitGenerator, VisitGeneratorConfig, VisitGeneratorSpec,
+    CLICK_RNG_STREAM, ComboNoiseProfile, DEFAULT_DAILY_REQUESTS, DayGenerationStats,
+    GeneratedImpression, INTEREST_COUNT, PREFERENCE_RNG_STREAM, UserActivityOracle,
+    UserActivityOracleSpec, UserPreferenceProfile, V1_NON_PREFERRED_BASE_CTR,
+    VISIT_DEFAULT_SEED, VisitGenerator, VisitGeneratorConfig, VisitGeneratorSpec,
+    WORLD_MODEL_RNG_STREAM, WorldModel, WorldModelInfo, WorldModelV1Params,
     generate_user_preferences, score_preference, user_activity_oracle_spec, visit_generator_spec,
 };
 
@@ -39,9 +41,9 @@ mod tests {
         BiddingStrategy, CAMPAIGNS_PER_ADVERTISER, Config, DAYS, DEFAULT_BIDDING,
         DEFAULT_CPC_CENTS, DEFAULT_DAILY_REQUESTS, DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
         DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_PACING, DEFAULT_RANKER, DEFAULT_RETRIEVAL,
-        DEFAULT_SCORING, DEFAULT_SEED, DEFAULT_SLATE_SIZE, MAX_CLICK_PROBABILITY, OwnedReport,
-        PacingStrategy, RankerStrategy, RetrievalStrategy, SCHEMA_VERSION, ScoringStrategy,
-        SimulationSpec, run, simulation_spec,
+        DEFAULT_SCORING, DEFAULT_SEED, DEFAULT_SLATE_SIZE, DEFAULT_WORLD_MODEL,
+        MAX_CLICK_PROBABILITY, OwnedReport, PacingStrategy, RankerStrategy, RetrievalStrategy,
+        SCHEMA_VERSION, ScoringStrategy, SimulationSpec, WorldModel, run, simulation_spec,
     };
 
     #[test]
@@ -68,6 +70,7 @@ mod tests {
         assert_eq!(spec.default_bidding, DEFAULT_BIDDING);
         assert_eq!(spec.default_slate_size, DEFAULT_SLATE_SIZE);
         assert_eq!(spec.default_daily_requests, DEFAULT_DAILY_REQUESTS);
+        assert_eq!(spec.default_world_model, DEFAULT_WORLD_MODEL);
 
         let json = serde_json::to_string(&spec).unwrap();
         let parsed: SimulationSpec = serde_json::from_str(&json).unwrap();
@@ -90,6 +93,7 @@ mod tests {
             pacing: PacingStrategy::P0,
             bidding: BiddingStrategy::Basebid,
             slate_size: DEFAULT_SLATE_SIZE,
+            world_model: WorldModel::V0,
         };
         let report = run(&marketplace, config).unwrap();
 

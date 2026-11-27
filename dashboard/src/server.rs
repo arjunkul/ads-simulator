@@ -14,7 +14,9 @@ use ad_server::{
     DEFAULT_RETRIEVAL, PacingStrategy, R1_SLATE_SIZE, RankerStrategy, RetrievalStrategy,
     ScoringStrategy,
 };
-use world_generator::{DEFAULT_SEED as DEFAULT_MARKETPLACE_SEED, generate_marketplace};
+use world_generator::{
+    DEFAULT_SEED as DEFAULT_MARKETPLACE_SEED, DEFAULT_WORLD_MODEL, WorldModel, generate_marketplace,
+};
 use serde::{Deserialize, Deserializer, Serialize};
 use sim_agent::{
     ANALYSIS_JSON_FILENAME, AgentConfig, BudgetTimeSeries, DEFAULT_CPC_CENTS, DEFAULT_IMPRESSIONS,
@@ -470,6 +472,8 @@ struct SimRunRequest {
     bidding: Option<BiddingStrategy>,
     #[serde(default)]
     slate_size: Option<usize>,
+    #[serde(default)]
+    world_model: Option<WorldModel>,
 }
 
 #[derive(Serialize)]
@@ -710,6 +714,7 @@ fn handle_sim_run(body: &[u8], state: &Arc<RwLock<DashboardState>>) -> HttpRespo
     let pacing = parsed.pacing.unwrap_or(DEFAULT_PACING);
     let bidding = parsed.bidding.unwrap_or(DEFAULT_BIDDING);
     let slate_size = parsed.slate_size.unwrap_or(DEFAULT_SLATE_SIZE);
+    let world_model = parsed.world_model.unwrap_or(DEFAULT_WORLD_MODEL);
 
     let config = AgentConfig {
         marketplace_path: None,
@@ -726,6 +731,7 @@ fn handle_sim_run(body: &[u8], state: &Arc<RwLock<DashboardState>>) -> HttpRespo
         pacing,
         bidding,
         slate_size,
+        world_model,
     };
 
     let run_result = match run_simulation(&config) {

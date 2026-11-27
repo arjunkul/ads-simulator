@@ -32,9 +32,10 @@ use ads_ml::{
 use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
 use world_generator::{
-    CLICK_RNG_STREAM as WORLD_CLICK_RNG_STREAM, DEFAULT_DAILY_REQUESTS, Item,
+    CLICK_RNG_STREAM as WORLD_CLICK_RNG_STREAM, DEFAULT_DAILY_REQUESTS,
+    DEFAULT_WORLD_MODEL as WORLD_DEFAULT_WORLD_MODEL, Item,
     MAX_CLICK_PROBABILITY as WORLD_MAX_CLICK_PROBABILITY, Marketplace, VisitGenerator,
-    VisitGeneratorConfig,
+    VisitGeneratorConfig, WorldModel,
 };
 
 pub const SCHEMA_VERSION: u32 = SERVER_SCHEMA_VERSION;
@@ -51,6 +52,7 @@ pub const DEFAULT_SCORING: ScoringStrategy = SERVER_DEFAULT_SCORING;
 pub const DEFAULT_PACING: PacingStrategy = SERVER_DEFAULT_PACING;
 pub const DEFAULT_BIDDING: BiddingStrategy = SERVER_DEFAULT_BIDDING;
 pub const DEFAULT_SLATE_SIZE: usize = R1_SLATE_SIZE;
+pub const DEFAULT_WORLD_MODEL: WorldModel = WORLD_DEFAULT_WORLD_MODEL;
 pub const CLICK_RNG_STREAM: u64 = WORLD_CLICK_RNG_STREAM;
 
 const fn default_min_campaign_budget_cents() -> u64 {
@@ -86,6 +88,8 @@ pub struct SimulationSpec {
     pub default_bidding: BiddingStrategy,
     pub default_slate_size: usize,
     pub default_daily_requests: usize,
+    #[serde(default)]
+    pub default_world_model: WorldModel,
 }
 
 /// Return the compiled simulation constants and default CLI parameters.
@@ -106,6 +110,7 @@ pub const fn simulation_spec() -> SimulationSpec {
         default_bidding: DEFAULT_BIDDING,
         default_slate_size: DEFAULT_SLATE_SIZE,
         default_daily_requests: DEFAULT_DAILY_REQUESTS,
+        default_world_model: DEFAULT_WORLD_MODEL,
     }
 }
 
@@ -134,6 +139,8 @@ pub struct Config {
     pub bidding: BiddingStrategy,
     #[serde(default = "default_slate_size")]
     pub slate_size: usize,
+    #[serde(default)]
+    pub world_model: WorldModel,
 }
 
 impl Config {
@@ -165,6 +172,7 @@ impl Default for Config {
             pacing: DEFAULT_PACING,
             bidding: DEFAULT_BIDDING,
             slate_size: DEFAULT_SLATE_SIZE,
+            world_model: DEFAULT_WORLD_MODEL,
         }
     }
 }
@@ -567,14 +575,8 @@ pub fn run_with_log_dir<'a>(
         ml_counts = vec![(0u64, 0u64); num_users * num_campaigns];
     }
 
-    let category_ids: Vec<String> = marketplace
-        .categories
-        .iter()
-        .map(|c| c.id.clone())
-        .collect();
-    let mut visit_generator = VisitGenerator::new(
-        user_ids.clone(),
-        category_ids,
+    let mut visit_generator = VisitGenerator::from_marketplace(
+        marketplace,
         VisitGeneratorConfig {
             seed: config.seed,
             preference_seed: Some(marketplace.seed.cast_unsigned()),
@@ -582,6 +584,7 @@ pub fn run_with_log_dir<'a>(
             daily_requests: DEFAULT_DAILY_REQUESTS,
             target_impressions: config.impressions,
             max_click_probability: MAX_CLICK_PROBABILITY,
+            world_model: config.world_model,
         },
     )?;
 
@@ -856,6 +859,7 @@ mod tests {
             pacing: PacingStrategy::P0,
             bidding: BiddingStrategy::Basebid,
             slate_size: R1_SLATE_SIZE,
+            world_model: super::DEFAULT_WORLD_MODEL,
         };
         let report = run(&marketplace, config).unwrap();
         assert_eq!(report, run(&marketplace, config).unwrap());
@@ -1000,6 +1004,7 @@ mod tests {
                 pacing: PacingStrategy::P0,
                 bidding: BiddingStrategy::Basebid,
                 slate_size: R1_SLATE_SIZE,
+                world_model: super::DEFAULT_WORLD_MODEL,
             }
         );
     }
@@ -1066,6 +1071,64 @@ mod tests {
             model_day_29["trees"]
                 .as_array()
                 .is_some_and(|trees| !trees.is_empty())
+        );
+    }
+
+    #[test]
+    fn world_model_v1_runs_deterministically_balances_ledgers_and_allows_non_preferred_clicks() {
+        let mut marketplace = generate_marketplace(42);
+        let cfg_v0 = Config {
+            seed: 42,
+            impressions: Some(60_000),
+            world_model: super::WorldModel::V0,
+            ..Config::default()
+        };
+        let cfg_v1 = Config {
+            world_model: super::WorldModel::V1,
+            ..cfg_v0
+        };
+
+        let report_v0 = run(&marketplace, cfg_v0).unwrap();
+        let report_v1_a = run(&marketplace, cfg_v1).unwrap();
+        let report_v1_b = run(&marketplace, cfg_v1).unwrap();
+
+        assert_eq!(report_v1_a.to_owned_report(), report_v1_b.to_owned_report());
+        assert_eq!(report_v1_a.config.world_model, super::WorldModel::V1);
+        assert_eq!(report_v1_a.summary.activity.impressions, 60_000);
+        assert_eq!(
+            report_v1_a.summary.activity.spend_cents,
+            report_v1_a.summary.activity.clicks * DEFAULT_CPC_CENTS
+        );
+        assert_eq!(
+            report_v1_a.summary.remaining_budget_cents + report_v1_a.summary.activity.spend_cents,
+            report_v1_a.summary.budget_cents
+        );
+        // Because v1 injects noisy background CTR on non-preferred categories (~0.2%) plus
+        // hierarchical shifts & noise, total clicks under random R1 should clearly exceed v0.
+        assert!(
+            report_v1_a.summary.activity.clicks > report_v0.summary.activity.clicks,
+            "v1 clicks ({}) should exceed v0 clicks ({}) due to noisy non-preferred background CTR",
+            report_v1_a.summary.activity.clicks,
+            report_v0.summary.activity.clicks
+        );
+
+        // Even when no served ad matches a user's preferred categories, v1 still produces noisy clicks.
+        for (idx, category) in marketplace.categories.iter_mut().enumerate() {
+            category.id = format!("no-campaign-category-{:03}", idx + 1);
+        }
+        let non_pref_v1 = run(
+            &marketplace,
+            Config {
+                seed: 42,
+                impressions: Some(15_000),
+                world_model: super::WorldModel::V1,
+                ..Config::default()
+            },
+        )
+        .unwrap();
+        assert!(
+            non_pref_v1.summary.activity.clicks > 0,
+            "world-model-v1 should produce noisy clicks even when all served ads are outside preferred categories"
         );
     }
 }

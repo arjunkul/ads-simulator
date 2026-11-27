@@ -12,7 +12,9 @@ use ad_server::{
     ScoringStrategy, StrategyProfile,
 };
 use ads_marketplace_simulation::{Activity, Config, OwnedReport, Report};
-use world_generator::{Marketplace, generate_marketplace};
+use world_generator::{
+    DEFAULT_WORLD_MODEL as WORLD_DEFAULT_WORLD_MODEL, Marketplace, WorldModel, generate_marketplace,
+};
 use serde::{Deserialize, Serialize};
 use simulation_analyzer::{SimulationAnalysis, analyze_report};
 use tempfile::NamedTempFile;
@@ -49,6 +51,8 @@ pub const DEFAULT_PACING: PacingStrategy = ads_marketplace_simulation::DEFAULT_P
 pub const DEFAULT_BIDDING: BiddingStrategy = ads_marketplace_simulation::DEFAULT_BIDDING;
 /// Default ad-server slate size (`20` distinct funded campaigns per request).
 pub const DEFAULT_SLATE_SIZE: usize = R1_SLATE_SIZE;
+/// Default click-oracle world model (`world-model-v0`).
+pub const DEFAULT_WORLD_MODEL: WorldModel = WORLD_DEFAULT_WORLD_MODEL;
 /// Default artifact output directory (`"output/sim-agent"`).
 pub const DEFAULT_OUTPUT_DIR: &str = "output/sim-agent";
 
@@ -117,6 +121,9 @@ pub struct AgentConfig {
     /// Maximum distinct funded campaigns served per ad-server request (default: `20`).
     #[serde(default = "default_slate_size")]
     pub slate_size: usize,
+    /// Click-oracle world model (`world-model-v0` or `world-model-v1`).
+    #[serde(default)]
+    pub world_model: WorldModel,
 }
 
 impl Default for AgentConfig {
@@ -136,6 +143,7 @@ impl Default for AgentConfig {
             pacing: DEFAULT_PACING,
             bidding: DEFAULT_BIDDING,
             slate_size: DEFAULT_SLATE_SIZE,
+            world_model: DEFAULT_WORLD_MODEL,
         }
     }
 }
@@ -156,6 +164,7 @@ impl AgentConfig {
             pacing: self.pacing,
             bidding: self.bidding,
             slate_size: self.slate_size,
+            world_model: self.world_model,
         }
     }
 }
@@ -188,6 +197,8 @@ pub struct TimeSeriesConfig {
     pub bidding: BiddingStrategy,
     #[serde(default = "default_slate_size")]
     pub slate_size: usize,
+    #[serde(default)]
+    pub world_model: WorldModel,
 }
 
 /// Aggregate 30-day budget and performance summary metrics.
@@ -905,6 +916,7 @@ pub fn timeseries_from_owned_report(
             pacing: report.config.pacing,
             bidding: report.config.bidding,
             slate_size: report.config.slate_size,
+            world_model: report.config.world_model,
         },
         strategy,
         summary,

@@ -1567,6 +1567,7 @@
         const pacingEl = document.getElementById("runner-pacing");
         const biddingEl = document.getElementById("runner-bidding");
         const slateEl = document.getElementById("runner-slate-size");
+        const worldModelEl = document.getElementById("runner-world-model");
         const natural = Boolean(document.getElementById("runner-natural").checked);
 
         const parseStrictInt = (raw) => {
@@ -1622,6 +1623,9 @@
         }
         if (biddingEl && biddingEl.value) {
           payload.bidding = biddingEl.value;
+        }
+        if (worldModelEl && worldModelEl.value) {
+          payload.world_model = worldModelEl.value;
         }
         if (slateEl && slateEl.value.trim() !== "") {
           const v = parseStrictInt(slateEl.value.trim());

@@ -8,8 +8,8 @@ use std::{
 use ads_marketplace_simulation::{
     BiddingStrategy, Config, DEFAULT_BIDDING, DEFAULT_CPC_CENTS, DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
     DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_PACING, DEFAULT_RANKER, DEFAULT_RETRIEVAL,
-    DEFAULT_SEED, DEFAULT_SLATE_SIZE, PacingStrategy, RankerStrategy, Report, RetrievalStrategy,
-    ScoringStrategy, run_with_log_dir,
+    DEFAULT_SEED, DEFAULT_SLATE_SIZE, DEFAULT_WORLD_MODEL, PacingStrategy, RankerStrategy, Report,
+    RetrievalStrategy, ScoringStrategy, WorldModel, run_with_log_dir,
 };
 use clap::Parser;
 use tempfile::NamedTempFile;
@@ -58,6 +58,9 @@ struct Args {
     /// Maximum number of distinct funded campaigns returned per ad-server request.
     #[arg(long, default_value_t = DEFAULT_SLATE_SIZE)]
     slate_size: usize,
+    /// Click-oracle world model (`world-model-v0`/`v0` or `world-model-v1`/`v1`).
+    #[arg(long, default_value_t = DEFAULT_WORLD_MODEL)]
+    world_model: WorldModel,
     /// Optional directory where daily `ads-ml` JSONL impression-click logs & models are written.
     #[arg(long)]
     impression_log_dir: Option<PathBuf>,
@@ -87,6 +90,7 @@ fn run_with_args(args: Args) -> Result<(), Box<dyn Error>> {
             pacing: args.pacing,
             bidding: args.bidding,
             slate_size: args.slate_size,
+            world_model: args.world_model,
         },
         args.impression_log_dir.as_deref(),
     )?;

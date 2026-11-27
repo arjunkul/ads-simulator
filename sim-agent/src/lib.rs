@@ -15,14 +15,15 @@ pub use agent::{
     BudgetTimeSeries, CURRENCY, DAYS, DEFAULT_BIDDING, DEFAULT_CPC_CENTS, DEFAULT_IMPRESSIONS,
     DEFAULT_MARKETPLACE_SEED, DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS,
     DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_OUTPUT_DIR, DEFAULT_PACING, DEFAULT_RANKER,
-    DEFAULT_RETRIEVAL, DEFAULT_SCORING, DEFAULT_SEED, DEFAULT_SLATE_SIZE, DailyBudgetPoint, Error,
-    RunArtifacts, RunResult, SCHEMA_VERSION, SIMULATION_REPORT_FILENAME, TIMESERIES_CSV_FILENAME,
-    TIMESERIES_JSON_FILENAME, TimeSeriesConfig, audit_report, build_budget_timeseries,
-    export_artifacts, load_timeseries_from_path, render_timeseries_csv, run_and_export,
-    run_simulation, timeseries_from_owned_report,
+    DEFAULT_RETRIEVAL, DEFAULT_SCORING, DEFAULT_SEED, DEFAULT_SLATE_SIZE, DEFAULT_WORLD_MODEL,
+    DailyBudgetPoint, Error, RunArtifacts, RunResult, SCHEMA_VERSION, SIMULATION_REPORT_FILENAME,
+    TIMESERIES_CSV_FILENAME, TIMESERIES_JSON_FILENAME, TimeSeriesConfig, audit_report,
+    build_budget_timeseries, export_artifacts, load_timeseries_from_path, render_timeseries_csv,
+    run_and_export, run_simulation, timeseries_from_owned_report,
 };
 pub use plot::render_budget_svg;
 pub use simulation_analyzer::{SimulationAnalysis, analyze_report, render_text_summary};
+pub use world_generator::WorldModel;
 
 /// Compiled specification, defaults, outputs, and capabilities of the `sim-agent` crate.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,6 +50,8 @@ pub struct SimAgentSpec {
     #[serde(default)]
     pub default_bidding: BiddingStrategy,
     pub default_slate_size: usize,
+    #[serde(default)]
+    pub default_world_model: WorldModel,
     pub default_output_dir: String,
     pub output_files: Vec<String>,
     pub cli_flags: Vec<String>,
@@ -77,6 +80,7 @@ pub fn sim_agent_spec() -> SimAgentSpec {
         default_pacing: DEFAULT_PACING,
         default_bidding: DEFAULT_BIDDING,
         default_slate_size: DEFAULT_SLATE_SIZE,
+        default_world_model: DEFAULT_WORLD_MODEL,
         default_output_dir: DEFAULT_OUTPUT_DIR.into(),
         output_files: vec![
             SIMULATION_REPORT_FILENAME.into(),
@@ -102,6 +106,7 @@ pub fn sim_agent_spec() -> SimAgentSpec {
             "--pacing".into(),
             "--bidding".into(),
             "--slate-size".into(),
+            "--world-model".into(),
         ],
         ledger_invariants: vec![
             "days.len() == 30 and sequential day 1..=30".into(),
@@ -126,8 +131,8 @@ mod tests {
         DEFAULT_CPC_CENTS, DEFAULT_IMPRESSIONS, DEFAULT_MARKETPLACE_SEED,
         DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS, DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_OUTPUT_DIR,
         DEFAULT_PACING, DEFAULT_RANKER, DEFAULT_RETRIEVAL, DEFAULT_SCORING, DEFAULT_SEED,
-        DEFAULT_SLATE_SIZE, SCHEMA_VERSION, SIMULATION_REPORT_FILENAME, SimAgentSpec,
-        TIMESERIES_CSV_FILENAME, TIMESERIES_JSON_FILENAME, sim_agent_spec,
+        DEFAULT_SLATE_SIZE, DEFAULT_WORLD_MODEL, SCHEMA_VERSION, SIMULATION_REPORT_FILENAME,
+        SimAgentSpec, TIMESERIES_CSV_FILENAME, TIMESERIES_JSON_FILENAME, sim_agent_spec,
     };
 
     #[test]
@@ -157,6 +162,7 @@ mod tests {
         assert_eq!(spec.default_pacing, DEFAULT_PACING);
         assert_eq!(spec.default_bidding, DEFAULT_BIDDING);
         assert_eq!(spec.default_slate_size, DEFAULT_SLATE_SIZE);
+        assert_eq!(spec.default_world_model, DEFAULT_WORLD_MODEL);
         assert_eq!(spec.default_output_dir, DEFAULT_OUTPUT_DIR);
         assert_eq!(
             spec.output_files,
@@ -168,7 +174,7 @@ mod tests {
                 ANALYSIS_JSON_FILENAME,
             ]
         );
-        assert_eq!(spec.cli_flags.len(), 16);
+        assert_eq!(spec.cli_flags.len(), 17);
         assert_eq!(spec.ledger_invariants.len(), 5);
         assert_eq!(spec.plot_panels.len(), 3);
 

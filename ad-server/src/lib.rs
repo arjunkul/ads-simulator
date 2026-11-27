@@ -794,6 +794,10 @@ impl AdServingTarget for AdServer {
         &ad.category_id
     }
 
+    fn ad_advertiser_id(ad: &Self::Ad) -> &str {
+        &ad.advertiser_id
+    }
+
     fn record_impression(
         &mut self,
         day: usize,
@@ -1190,6 +1194,7 @@ mod tests {
                 daily_requests: DEFAULT_DAILY_REQUESTS,
                 target_impressions: Some(1_000),
                 max_click_probability: 0.0,
+                ..VisitGeneratorConfig::default()
             },
         )
         .unwrap();

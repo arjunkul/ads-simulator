@@ -26,9 +26,11 @@ pub use timestamp::{
     sample_pst_second_of_day,
 };
 pub use user_activity_oracle::{
-    CLICK_RNG_STREAM, INTEREST_COUNT, MAX_CLICK_PROBABILITY, PREFERENCE_RNG_STREAM,
-    UserActivityOracle, UserActivityOracleSpec, UserPreferenceProfile, generate_user_preferences,
-    score_preference, user_activity_oracle_spec,
+    CLICK_RNG_STREAM, ComboNoiseProfile, DEFAULT_WORLD_MODEL, INTEREST_COUNT,
+    MAX_CLICK_PROBABILITY, PREFERENCE_RNG_STREAM, UserActivityOracle, UserActivityOracleSpec,
+    UserPreferenceProfile, V1_NON_PREFERRED_BASE_CTR, WORLD_MODEL_RNG_STREAM, WorldModel,
+    WorldModelInfo, WorldModelV1Params, generate_user_preferences, score_preference,
+    user_activity_oracle_spec,
 };
 pub use visit_generator::{
     AdServingTarget, DEFAULT_DAILY_REQUESTS, DEFAULT_DAYS, DEFAULT_SEED as VISIT_DEFAULT_SEED,

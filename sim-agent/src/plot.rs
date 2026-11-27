@@ -1067,6 +1067,7 @@ mod tests {
                 pacing: crate::DEFAULT_PACING,
                 bidding: crate::DEFAULT_BIDDING,
                 slate_size: crate::DEFAULT_SLATE_SIZE,
+                world_model: crate::DEFAULT_WORLD_MODEL,
             },
             strategy: crate::StrategyProfile::default(),
             summary: BudgetSummary {
@@ -1136,6 +1137,7 @@ mod tests {
                     pacing: crate::DEFAULT_PACING,
                     bidding: crate::DEFAULT_BIDDING,
                     slate_size: crate::DEFAULT_SLATE_SIZE,
+                    world_model: crate::DEFAULT_WORLD_MODEL,
                 },
                 strategy: crate::StrategyProfile::default(),
                 summary: BudgetSummary {

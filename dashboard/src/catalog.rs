@@ -311,21 +311,35 @@ pub fn build_catalog() -> SimulatorCatalog {
             crate_name: "world-generator".into(),
             stage: "World Generation".into(),
             source_files: vec!["world-generator/src/user_activity_oracle.rs".into()],
-            summary: "Assigns each shopper 5 unique preferred categories (Stream 3 + score_preference) and evaluates visitor clicks on served ads (Stream 2: 4% preferred / 0% non-preferred).".into(),
+            summary: "Assigns each shopper 5 unique preferred categories (Stream 3 + score_preference) and evaluates visitor clicks via selectable world models: world-model-v0 (binary 4% / 0%) or world-model-v1 (hierarchical static shifts + varying per-impression noise per retail group, category, and advertiser combo).".into(),
             parameters: vec![
+                param("default_world_model", "Default World Model", oracle.default_world_model.as_str(), "model"),
+                param(
+                    "supported_world_models",
+                    "Supported World Models",
+                    oracle
+                        .supported_world_models
+                        .iter()
+                        .map(|m| m.id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    "models",
+                ),
                 param("interest_count", "Preferred Categories / User", oracle.interest_count, "categories"),
                 param("preference_rng_stream", "Preference RNG Stream", format!("ChaCha8 Stream {}", oracle.preference_rng_stream), "stream"),
                 param("click_rng_stream", "User Activity Oracle RNG Stream", format!("ChaCha8 Stream {}", oracle.click_rng_stream), "stream"),
-                param("max_click_probability", "Preferred-Category Click Probability", format!("{} ({:.1}%)", oracle.max_click_probability, max_ctr_pct), "probability"),
-                param("non_preferred_click_probability", "Non-Preferred Click Probability", 0.0, "probability"),
+                param("world_model_rng_stream", "World Model v1 Param RNG Stream", format!("ChaCha8 Stream {}", oracle.world_model_rng_stream), "stream"),
+                param("max_click_probability", "Preferred-Category Base Click Probability", format!("{} ({:.1}%)", oracle.max_click_probability, max_ctr_pct), "probability"),
+                param("v1_non_preferred_base_ctr", "v1 Non-Preferred Base CTR", format!("{} ({:.2}%)", oracle.v1_non_preferred_base_ctr, oracle.v1_non_preferred_base_ctr * 100.0), "probability"),
             ],
             features: vec![
                 feat("Unique Shopper Preferred Categories", "generate_user_preferences assigns 5 distinct preferred categories per shopper on Stream 3 with binary score_preference(profile, item)."),
-                feat("Isolated User Activity Click Oracle", "UserActivityOracle evaluates visitor clicks on Stream 2 (4% if ad category is in user preferred categories, 0% otherwise) while remaining hidden from AdServer."),
+                feat("World Model v0 (Binary Category Oracle)", "Baseline click oracle evaluating visitor clicks on Stream 2 (4% on preferred categories, 0% otherwise) while remaining hidden from AdServer."),
+                feat("World Model v1 (Noisy Hierarchical Oracle)", "Injects seeded static logit CTR shifts and varying per-impression Gaussian logit noise per retail group, category, and (advertiser, category) combo on Stream 4 + Stream 2, with noisy non-zero background CTR on non-preferred categories."),
             ],
             gaps_and_simplifications: vec![
-                "Binary 0/1 category preference model does not capture graded affinity, price sensitivity, recency, or ad fatigue, and stays static over 30 days.".into(),
-                "No position-bias decay across slate slots 1..20 (slot 20 has the same 4% preferred click rate as slot 1).".into(),
+                "User category preferences stay static over 30 days without price sensitivity, recency, or ad fatigue.".into(),
+                "No position-bias decay across slate slots 1..20 (slot 20 has the same click distribution as slot 1).".into(),
             ],
         },
         SimulatorPiece {
