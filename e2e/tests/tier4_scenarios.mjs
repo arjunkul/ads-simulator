@@ -430,7 +430,7 @@ export const tests = [
     async fn(ctx) {
       assertZeroPythonFiles(ctx.repoRoot);
       assert.ok(fs.existsSync(path.join(ctx.repoRoot, "Cargo.lock")));
-      for (const bin of ["ads-simulator", "ads-marketplace-simulation", "sim-agent", "ads-simulator-dashboard"]) {
+      for (const bin of ["world-generator", "ads-marketplace-simulation", "sim-agent", "ads-simulator-dashboard"]) {
         assert.ok(fs.existsSync(resolveBinary(bin)), `Binary ${bin} must exist`);
       }
 
@@ -438,7 +438,7 @@ export const tests = [
       const s2Sim = path.join(ctx.tmpDir, "s2", "sim.json");
       const s3 = path.join(ctx.tmpDir, "s3");
 
-      await runBinaryOk("ads-simulator", ["--seed", "55", "--output-dir", s1]);
+      await runBinaryOk("world-generator", ["--seed", "55", "--output-dir", s1]);
       const mpPath = path.join(s1, "marketplace.json");
       validateMarketplaceJson(readJsonFile(mpPath), { expectedSeed: 55 });
 

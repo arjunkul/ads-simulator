@@ -11,7 +11,7 @@ import { readJsonFile, runBinary, runBinaryOk, validateSimulationReport } from "
 const AREA = "cpc-simulator";
 
 async function generateMarketplace(dir, seed = 42) {
-  await runBinaryOk("ads-simulator", ["--seed", String(seed), "--output-dir", dir]);
+  await runBinaryOk("world-generator", ["--seed", String(seed), "--output-dir", dir]);
   return path.join(dir, "marketplace.json");
 }
 

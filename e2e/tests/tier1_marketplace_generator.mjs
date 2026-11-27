@@ -19,7 +19,7 @@ export const tests = [
     title: "Default seed (42) generates schema v1 marketplace with exact entity counts",
     async fn(ctx) {
       const outDir = path.join(ctx.tmpDir, "mkt-default");
-      const res = await runBinaryOk("ads-simulator", ["--output-dir", outDir]);
+      const res = await runBinaryOk("world-generator", ["--output-dir", outDir]);
       const expectedFile = path.join(outDir, "marketplace.json");
       assert.strictEqual(res.stdout.trim(), expectedFile, "stdout must report written marketplace.json path");
       assert.ok(fs.existsSync(expectedFile), "marketplace.json must exist");
@@ -40,7 +40,7 @@ export const tests = [
     title: "Referential integrity, globally unique 6000 item IDs, price & budget ranges",
     async fn(ctx) {
       const outDir = path.join(ctx.tmpDir, "mkt-integrity");
-      await runBinaryOk("ads-simulator", ["--seed", "42", "--output-dir", outDir]);
+      await runBinaryOk("world-generator", ["--seed", "42", "--output-dir", outDir]);
       const mp = readJsonFile(path.join(outDir, "marketplace.json"));
       validateMarketplaceJson(mp, { expectedSeed: 42 });
 
@@ -58,7 +58,7 @@ export const tests = [
     title: "User personas contain exact schema keys and browsing events preserve 9/3 split",
     async fn(ctx) {
       const outDir = path.join(ctx.tmpDir, "mkt-users");
-      await runBinaryOk("ads-simulator", ["--seed", "42", "--output-dir", outDir]);
+      await runBinaryOk("world-generator", ["--seed", "42", "--output-dir", outDir]);
       const mp = readJsonFile(path.join(outDir, "marketplace.json"));
       validateMarketplaceJson(mp, { expectedSeed: 42 });
 
@@ -81,8 +81,8 @@ export const tests = [
     async fn(ctx) {
       const dirA = path.join(ctx.tmpDir, "det-a");
       const dirB = path.join(ctx.tmpDir, "det-b");
-      await runBinaryOk("ads-simulator", ["--seed", "42", "--output-dir", dirA]);
-      await runBinaryOk("ads-simulator", ["--seed", "42", "--output-dir", dirB]);
+      await runBinaryOk("world-generator", ["--seed", "42", "--output-dir", dirA]);
+      await runBinaryOk("world-generator", ["--seed", "42", "--output-dir", dirB]);
 
       const bytesA = fs.readFileSync(path.join(dirA, "marketplace.json"));
       const bytesB = fs.readFileSync(path.join(dirB, "marketplace.json"));
@@ -99,8 +99,8 @@ export const tests = [
     async fn(ctx) {
       const dirA = path.join(ctx.tmpDir, "seed-42");
       const dirB = path.join(ctx.tmpDir, "seed-43");
-      await runBinaryOk("ads-simulator", ["--seed", "42", "--output-dir", dirA]);
-      await runBinaryOk("ads-simulator", ["--seed", "43", "--output-dir", dirB]);
+      await runBinaryOk("world-generator", ["--seed", "42", "--output-dir", dirA]);
+      await runBinaryOk("world-generator", ["--seed", "43", "--output-dir", dirB]);
 
       const mpA = readJsonFile(path.join(dirA, "marketplace.json"));
       const mpB = readJsonFile(path.join(dirB, "marketplace.json"));
@@ -123,7 +123,7 @@ export const tests = [
       const emptyCwd = path.join(ctx.tmpDir, "help-cwd");
       fs.mkdirSync(emptyCwd, { recursive: true });
       for (const flag of ["--help", "-h"]) {
-        const res = await runBinaryOk("ads-simulator", [flag], { cwd: emptyCwd });
+        const res = await runBinaryOk("world-generator", [flag], { cwd: emptyCwd });
         assert.ok(/usage:/i.test(res.stdout), `${flag} stdout must contain Usage:`);
         assert.ok(res.stdout.includes("--output-dir"), `${flag} stdout must document --output-dir`);
         assert.ok(res.stdout.includes("--seed"), `${flag} stdout must document --seed`);

@@ -2,11 +2,13 @@
 
 use ad_server::ad_server_spec;
 use ads_marketplace_simulation::simulation_spec;
-use ads_simulator::{BrowseReason, generate_marketplace, marketplace_spec, taxonomy};
 use serde::{Deserialize, Serialize};
 use sim_agent::sim_agent_spec;
 use simulation_analyzer::analyzer_spec;
-use visit_simulator::visit_simulator_spec;
+use world_generator::{
+    BrowseReason, generate_marketplace, marketplace_spec, taxonomy, user_activity_oracle_spec,
+    visit_generator_spec,
+};
 
 /// Top-level catalog describing all architectural pieces of the simulator workspace.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -157,11 +159,12 @@ fn edge(from: &str, to: &str, label: &str) -> PipelineEdge {
     }
 }
 
-/// Construct the live code-derived 11-piece `SimulatorCatalog` from all 7 compiled workspace crates.
+/// Construct the live code-derived 12-piece `SimulatorCatalog` from all 7 compiled workspace crates.
 pub fn build_catalog() -> SimulatorCatalog {
     let mp = marketplace_spec();
     let srv = ad_server_spec();
-    let visit = visit_simulator_spec();
+    let visit = visit_generator_spec();
+    let oracle = user_activity_oracle_spec();
     let sim = simulation_spec();
     let analyzer = analyzer_spec();
     let agent = sim_agent_spec();
@@ -177,9 +180,13 @@ pub fn build_catalog() -> SimulatorCatalog {
         SimulatorPiece {
             id: "taxonomy-schema".into(),
             name: "Product Taxonomy & Schema".into(),
-            crate_name: "ads-simulator".into(),
-            stage: "Marketplace Generation".into(),
-            source_files: vec!["src/taxonomy.rs".into(), "src/lib.rs".into()],
+            crate_name: "world-generator".into(),
+            stage: "World Generation".into(),
+            source_files: vec![
+                "world-generator/src/taxonomy.rs".into(),
+                "world-generator/src/marketplace.rs".into(),
+                "world-generator/src/lib.rs".into(),
+            ],
             summary: "Defines the deterministic 10x10 product taxonomy, stable category IDs, USD-cent schema v1 contract, and live MarketplaceSpec metadata.".into(),
             parameters: vec![
                 param("schema_version", "Schema Version", mp.schema_version, "version"),
@@ -203,9 +210,9 @@ pub fn build_catalog() -> SimulatorCatalog {
         SimulatorPiece {
             id: "advertiser-catalog".into(),
             name: "Advertiser & Catalog Generator".into(),
-            crate_name: "ads-simulator".into(),
-            stage: "Marketplace Generation".into(),
-            source_files: vec!["src/lib.rs".into()],
+            crate_name: "world-generator".into(),
+            stage: "World Generation".into(),
+            source_files: vec!["world-generator/src/marketplace.rs".into()],
             summary: "Synthesizes 50 specialty merchants, each carrying 20 catalog offers spanning all 10 categories in its group with randomized pricing and daily budget.".into(),
             parameters: vec![
                 param("advertiser_count", "Advertisers", mp.advertiser_count, "merchants"),
@@ -227,9 +234,9 @@ pub fn build_catalog() -> SimulatorCatalog {
         SimulatorPiece {
             id: "organic-inventory".into(),
             name: "Organic Listing Inventory".into(),
-            crate_name: "ads-simulator".into(),
-            stage: "Marketplace Generation".into(),
-            source_files: vec!["src/lib.rs".into()],
+            crate_name: "world-generator".into(),
+            stage: "World Generation".into(),
+            source_files: vec!["world-generator/src/marketplace.rs".into()],
             summary: "Generates 5,000 non-ad organic listings evenly balanced at 50 items per category to supply shopper browsing datasets.".into(),
             parameters: vec![
                 param("organic_per_category", "Organic Items / Category", mp.organic_per_category, "items"),
@@ -247,9 +254,12 @@ pub fn build_catalog() -> SimulatorCatalog {
         SimulatorPiece {
             id: "user-browsing".into(),
             name: "Shopper Roster & Organic Browsing".into(),
-            crate_name: "ads-simulator".into(),
-            stage: "Marketplace Generation".into(),
-            source_files: vec!["src/lib.rs".into(), "src/main.rs".into()],
+            crate_name: "world-generator".into(),
+            stage: "World Generation".into(),
+            source_files: vec![
+                "world-generator/src/marketplace.rs".into(),
+                "world-generator/src/main.rs".into(),
+            ],
             summary: "Creates 1,000 shopper identities (id-only) and 12,000 shuffled organic browsing events (9 affinity + 3 exploration per shopper).".into(),
             parameters: vec![
                 param("user_count", "Shoppers", mp.user_count, "users"),
@@ -259,47 +269,62 @@ pub fn build_catalog() -> SimulatorCatalog {
                 param("total_browsing_events", "Total Browsing Events", mp.total_browsing_events, "events"),
             ],
             features: vec![
-                feat("Minimal Shopper Identity Schema", "Serializes User with id-only so visitor preference profiles remain encapsulated in visit-simulator."),
+                feat("Minimal Shopper Identity Schema", "Serializes User with id-only so visitor preference profiles remain encapsulated in world-generator::user_activity_oracle."),
                 feat("75/25 Affinity-Exploration Browsing Split", "Samples 9 distinct focus-category listings and 3 outside-focus listings per shopper, then shuffles order."),
-                feat("Atomic JSON CLI Export", "ads-simulator CLI writes marketplace.json atomically via NamedTempFile."),
+                feat("Atomic JSON CLI Export", "world-generator CLI writes marketplace.json atomically via NamedTempFile."),
             ],
             gaps_and_simplifications: vec![
                 "Static shopper roster without churn, new-user acquisition, or organic session timestamps.".into(),
             ],
         },
         SimulatorPiece {
-            id: "visit-simulator".into(),
-            name: "Visit Simulator, Preferences & Click Oracle".into(),
-            crate_name: "visit-simulator".into(),
-            stage: "Ad Serving & Simulation".into(),
+            id: "visit-generator".into(),
+            name: "Visit Generator & Diurnal Arrivals".into(),
+            crate_name: "world-generator".into(),
+            stage: "World Generation".into(),
             source_files: vec![
-                "visit-simulator/src/lib.rs".into(),
-                "visit-simulator/src/main.rs".into(),
+                "world-generator/src/visit_generator.rs".into(),
+                "world-generator/src/timestamp.rs".into(),
+                "simulation/src/bin/visit_generator.rs".into(),
             ],
-            summary: "Models visitor behavior across 30 days: assigns each shopper 5 unique preferred categories (Stream 3 + score_preference), samples preference-independent visit arrivals (Stream 1) to generate ad slots via AdServer::serve_ads(user_id), and runs ClickOracle (Stream 2: 4% preferred / 0% non-preferred).".into(),
+            summary: "Samples preference-independent shopper visits across 30 days (Stream 1) with optional PST diurnal timestamps, drives AdServer::serve_ads(user_id) via AdServingTarget, and coordinates click feedback.".into(),
             parameters: vec![
-                param("interest_count", "Preferred Categories / User", visit.interest_count, "categories"),
                 param("user_independent_arrivals", "Preference-Independent Visit Arrivals", visit.user_independent_arrivals, "bool"),
                 param("default_days", "Simulation Horizon", visit.default_days, "days"),
                 param("default_daily_requests", "Default Daily Ad Requests", visit.default_daily_requests, "requests/day"),
                 param("rng_stream", "Visit Arrival RNG Stream", format!("ChaCha8 Stream {}", visit.rng_stream), "stream"),
-                param("click_rng_stream", "Click Oracle RNG Stream", format!("ChaCha8 Stream {}", visit.click_rng_stream), "stream"),
-                param("preference_rng_stream", "Preference RNG Stream", format!("ChaCha8 Stream {}", visit.preference_rng_stream), "stream"),
-                param("max_click_probability", "Preferred-Category Click Probability", format!("{} ({:.1}%)", visit.max_click_probability, max_ctr_pct), "probability"),
-                param("non_preferred_click_probability", "Non-Preferred Click Probability", 0.0, "probability"),
                 param("default_seed", "Default Seed", visit.default_seed, "u64"),
             ],
             features: vec![
-                feat("Unique Shopper Preferred Categories", "generate_user_preferences assigns 5 distinct preferred categories per shopper on Stream 3 with binary score_preference(profile, item)."),
-                feat("Preference-Independent Visit Arrivals & Serving Boundary", "Samples visiting users uniformly on Stream 1 and sends only user_id to AdServer::serve_ads(user_id), keeping AdServer decoupled from shopper preferences."),
-                feat("Built-In Visitor Click Oracle", "ClickOracle evaluates visitor clicks on Stream 2 (4% if ad category is in user preferred categories, 0% otherwise) and delegates CPC billing to AdServer::record_impression."),
+                feat("Preference-Independent Visit Arrivals & Serving Boundary", "Samples visiting users uniformly on Stream 1 and sends only user_id to AdServingTarget::serve_ads(user_id), keeping AdServer decoupled from shopper preferences."),
+                feat("PST Diurnal Intraday Arrival Schedule", "Generates split-normal PST arrival timestamps peaking at 08:00 PST and tapering off around 18:00 PST when pacing-1 is active."),
                 feat("Dual Request & Target Quota Modes", "Supports natural visit request streams (600 req/day = 12k impressions/day at slate 20) or exact 30-day impression quotas."),
-                feat("Standalone CLI Binary", "visit-simulator CLI produces standalone JSON slates directly from marketplace users/categories and AdServer."),
-                feat("Unreachable Quota Guard", "Detects empty AdServer responses when budgets deplete and fails cleanly with delivered impression count."),
+                feat("Standalone CLI Binary & Unreachable Quota Guard", "visit-generator CLI produces standalone JSON slates directly from marketplace users/categories and AdServer, and fails cleanly when budgets deplete."),
+            ],
+            gaps_and_simplifications: vec![
+                "Uniform random user sampling without user session frequency caps or heavy-user power-law arrival distributions.".into(),
+            ],
+        },
+        SimulatorPiece {
+            id: "user-activity-oracle".into(),
+            name: "User Activity Oracle & Preferences".into(),
+            crate_name: "world-generator".into(),
+            stage: "World Generation".into(),
+            source_files: vec!["world-generator/src/user_activity_oracle.rs".into()],
+            summary: "Assigns each shopper 5 unique preferred categories (Stream 3 + score_preference) and evaluates visitor clicks on served ads (Stream 2: 4% preferred / 0% non-preferred).".into(),
+            parameters: vec![
+                param("interest_count", "Preferred Categories / User", oracle.interest_count, "categories"),
+                param("preference_rng_stream", "Preference RNG Stream", format!("ChaCha8 Stream {}", oracle.preference_rng_stream), "stream"),
+                param("click_rng_stream", "User Activity Oracle RNG Stream", format!("ChaCha8 Stream {}", oracle.click_rng_stream), "stream"),
+                param("max_click_probability", "Preferred-Category Click Probability", format!("{} ({:.1}%)", oracle.max_click_probability, max_ctr_pct), "probability"),
+                param("non_preferred_click_probability", "Non-Preferred Click Probability", 0.0, "probability"),
+            ],
+            features: vec![
+                feat("Unique Shopper Preferred Categories", "generate_user_preferences assigns 5 distinct preferred categories per shopper on Stream 3 with binary score_preference(profile, item)."),
+                feat("Isolated User Activity Click Oracle", "UserActivityOracle evaluates visitor clicks on Stream 2 (4% if ad category is in user preferred categories, 0% otherwise) while remaining hidden from AdServer."),
             ],
             gaps_and_simplifications: vec![
                 "Binary 0/1 category preference model does not capture graded affinity, price sensitivity, recency, or ad fatigue, and stays static over 30 days.".into(),
-                "Uniform random user sampling without intraday seasonality, user session frequency caps, or heavy-user power-law arrival distributions.".into(),
                 "No position-bias decay across slate slots 1..20 (slot 20 has the same 4% preferred click rate as slot 1).".into(),
             ],
         },
@@ -352,7 +377,6 @@ pub fn build_catalog() -> SimulatorCatalog {
             source_files: vec![
                 "ad-server/src/retrieval.rs".into(),
                 "ad-server/src/bidding.rs".into(),
-                "ad-server/src/timestamp.rs".into(),
                 "ad-server/src/ranker.rs".into(),
                 "ad-server/src/strategy.rs".into(),
                 "ml/src/lib.rs".into(),
@@ -394,7 +418,7 @@ pub fn build_catalog() -> SimulatorCatalog {
                 "simulation/src/lib.rs".into(),
                 "simulation/src/main.rs".into(),
             ],
-            summary: "Orchestrates VisitSimulator (visit arrivals + ClickOracle) and AdServer across 30 days, drives optional daily Score-R1 / Score-XGB ML training and JSONL logging, and assembles balanced Schema v1 reports.".into(),
+            summary: "Orchestrates world-generator (VisitGenerator + UserActivityOracle) and AdServer across 30 days, drives optional daily Score-R1 / Score-XGB ML training and JSONL logging, and assembles balanced Schema v1 reports.".into(),
             parameters: vec![
                 param("days", "Simulation Horizon", sim.days, "days"),
                 param("default_ranker", "Default Ranker", sim.default_ranker.as_str(), "strategy"),
@@ -404,8 +428,8 @@ pub fn build_catalog() -> SimulatorCatalog {
                 param("default_bidding", "Default Bidding", sim.default_bidding.as_str(), "strategy"),
             ],
             features: vec![
-                feat("Isolated 3-Stream RNG Architecture", "Stream 0 (AdServer/Ranker), Stream 1 (VisitSimulator arrivals), and Stream 2 (VisitSimulator ClickOracle) remain strictly independent."),
-                feat("Click-Only CPC Ledger Aggregation", "Aggregates VisitSimulator delivery/click outcomes and AdServer campaign ledgers into balanced 30-day Schema v1 reports."),
+                feat("Isolated 4-Stream RNG Architecture", "Stream 0 (AdServer/Ranker), Stream 1 (VisitGenerator arrivals), Stream 2 (UserActivityOracle clicks), and Stream 3 (user preferences) remain strictly independent."),
+                feat("Click-Only CPC Ledger Aggregation", "Aggregates VisitGenerator/UserActivityOracle delivery and click outcomes and AdServer campaign ledgers into balanced 30-day Schema v1 reports."),
                 feat("Daily ML CTR Training & JSONL Logging", "Optionally persists daily impression-click logs and runs end-of-day PyTorch (Score-R1) or XGBoost (Score-XGB) CTR training via ads-ml."),
                 feat("Dual Borrowed & Owned Report Types", "Exports zero-copy Report and serde-deserializable OwnedReport with ad_requests, ranker, and balanced multi-level ledgers."),
             ],
@@ -479,11 +503,11 @@ pub fn build_catalog() -> SimulatorCatalog {
                 "dashboard/src/export.rs".into(),
                 "dashboard/src/main.rs".into(),
             ],
-            summary: "Serves a zero-build interactive web dashboard and pure-Rust HTTP/1.1 API featuring the Component Interaction Flowchart, all 11 pieces, live Ad-Server R1 sampler, auto-analyzer panel, and offline static export.".into(),
+            summary: "Serves a zero-build interactive web dashboard and pure-Rust HTTP/1.1 API featuring the Component Interaction Flowchart, all 12 pieces, live Ad-Server R1 sampler, auto-analyzer panel, and offline static export.".into(),
             parameters: vec![
                 param("default_host", "Default Bind Host", "127.0.0.1", "IP"),
                 param("default_port", "Default Bind Port", 8080, "TCP port (0 for ephemeral)"),
-                param("catalog_pieces", "Cataloged Simulator Pieces", 11, "pieces"),
+                param("catalog_pieces", "Cataloged Simulator Pieces", 12, "pieces"),
                 param("export_files", "Static Export Bundle", "index.html, dashboard-data.json, budget_timeseries.json, budget_spent_30d.svg", "files"),
             ],
             features: vec![
@@ -510,69 +534,23 @@ pub fn build_catalog() -> SimulatorCatalog {
         .sum();
 
     let pipeline_edges = vec![
-        edge(
-            "taxonomy-schema",
-            "advertiser-catalog",
-            "10x10 category IDs",
-        ),
-        edge(
-            "taxonomy-schema",
-            "organic-inventory",
-            "50 listings / category",
-        ),
-        edge(
-            "taxonomy-schema",
-            "visit-simulator",
-            "100 category IDs -> 5 preferred / user",
-        ),
-        edge(
-            "organic-inventory",
-            "user-browsing",
-            "9 affinity + 3 exploration views",
-        ),
-        edge(
-            "user-browsing",
-            "visit-simulator",
-            "user_ids (1,000 shoppers)",
-        ),
-        edge(
-            "advertiser-catalog",
-            "ad-server",
-            "500 funded CPC campaigns",
-        ),
-        edge(
-            "visit-simulator",
-            "ad-server",
-            "serve_ads(user_id) & record_impression",
-        ),
+        edge("taxonomy-schema", "advertiser-catalog", "10x10 category IDs"),
+        edge("taxonomy-schema", "organic-inventory", "50 listings / category"),
+        edge("taxonomy-schema", "user-activity-oracle", "100 category IDs -> 5 preferred / user"),
+        edge("organic-inventory", "user-browsing", "9 affinity + 3 exploration views"),
+        edge("user-browsing", "visit-generator", "user_ids (1,000 shoppers)"),
+        edge("advertiser-catalog", "ad-server", "500 funded CPC campaigns"),
+        edge("visit-generator", "ad-server", "serve_ads(user_id) & record_impression"),
         edge("ad-server", "ads-ranker-r1", "eligible funded pool"),
         edge("ads-ranker-r1", "ad-server", "20 distinct funded campaigns"),
-        edge("ad-server", "visit-simulator", "20-ad served slate"),
-        edge(
-            "visit-simulator",
-            "delivery-click-engine",
-            "delivered impressions & clicks",
-        ),
-        edge(
-            "delivery-click-engine",
-            "simulation-analyzer",
-            "30-day Report JSON",
-        ),
-        edge(
-            "delivery-click-engine",
-            "sim-agent-runner",
-            "audited 30-day ledger",
-        ),
-        edge(
-            "simulation-analyzer",
-            "sim-agent-runner",
-            "analysis.json + findings",
-        ),
-        edge(
-            "sim-agent-runner",
-            "dashboard-inspector",
-            "time series, analysis & SVG",
-        ),
+        edge("ad-server", "user-activity-oracle", "20-ad served slate"),
+        edge("visit-generator", "user-activity-oracle", "visiting user_index"),
+        edge("user-activity-oracle", "ad-server", "record_impression (click -> -CPC)"),
+        edge("visit-generator", "delivery-click-engine", "delivered impressions & clicks"),
+        edge("delivery-click-engine", "simulation-analyzer", "30-day Report JSON"),
+        edge("delivery-click-engine", "sim-agent-runner", "audited 30-day ledger"),
+        edge("simulation-analyzer", "sim-agent-runner", "analysis.json + findings"),
+        edge("sim-agent-runner", "dashboard-inspector", "time series, analysis & SVG"),
     ];
 
     SimulatorCatalog {
@@ -584,7 +562,7 @@ pub fn build_catalog() -> SimulatorCatalog {
             total_features,
             implemented_features,
             gaps_and_simplifications,
-            crates: 8,
+            crates: 7,
             categories: mp.category_count,
             advertisers: mp.advertiser_count,
             users: mp.user_count,
@@ -709,20 +687,20 @@ mod tests {
     use super::{build_catalog, inspect_marketplace};
 
     #[test]
-    fn catalog_has_eleven_connected_pieces_and_verified_rust_sources() {
+    fn catalog_has_twelve_connected_pieces_and_verified_rust_sources() {
         let catalog = build_catalog();
         assert_eq!(catalog.schema_version, 1);
         assert_eq!(catalog.currency, "USD");
-        assert_eq!(catalog.pieces.len(), 11);
-        assert_eq!(catalog.summary_counts.pieces, 11);
-        assert_eq!(catalog.summary_counts.crates, 8);
+        assert_eq!(catalog.pieces.len(), 12);
+        assert_eq!(catalog.summary_counts.pieces, 12);
+        assert_eq!(catalog.summary_counts.crates, 7);
         assert_eq!(catalog.summary_counts.r1_slate_size, 20);
         assert!(catalog.pipeline_edges.len() >= 10);
         assert!(catalog.summary_counts.gaps_and_simplifications >= 3);
 
         let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
         let ids: HashSet<_> = catalog.pieces.iter().map(|p| p.id.as_str()).collect();
-        assert_eq!(ids.len(), 11);
+        assert_eq!(ids.len(), 12);
 
         let mut connected = HashSet::new();
         for edge in &catalog.pipeline_edges {
@@ -732,7 +710,7 @@ mod tests {
             connected.insert(edge.from.as_str());
             connected.insert(edge.to.as_str());
         }
-        assert_eq!(connected.len(), 11);
+        assert_eq!(connected.len(), 12);
 
         for piece in &catalog.pieces {
             assert!(!piece.source_files.is_empty());

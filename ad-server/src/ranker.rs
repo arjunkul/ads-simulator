@@ -575,7 +575,7 @@ mod tests {
     use std::collections::HashSet;
     use std::str::FromStr;
 
-    use ads_simulator::generate_marketplace;
+    use world_generator::generate_marketplace;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 

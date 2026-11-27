@@ -13,4 +13,4 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 tempfile = "3"
 
 [dev-dependencies]
-ads-simulator = { path = ".." }
+world-generator = { path = "../world-generator" }

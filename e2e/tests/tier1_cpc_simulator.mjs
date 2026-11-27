@@ -11,7 +11,7 @@ import { readJsonFile, runBinaryOk, validateSimulationReport } from "../helpers.
 const AREA = "cpc-simulator";
 
 async function generateMarketplace(dir, seed = 42) {
-  await runBinaryOk("ads-simulator", ["--seed", String(seed), "--output-dir", dir]);
+  await runBinaryOk("world-generator", ["--seed", String(seed), "--output-dir", dir]);
   return path.join(dir, "marketplace.json");
 }
 
@@ -212,18 +212,18 @@ export const tests = [
     tier: 1,
     area: AREA,
     features: ["F7", "F8"],
-    title: "Standalone visit-simulator CLI operates ad-server Strategy R1 returning 20 distinct funded campaigns per request",
+    title: "Standalone visit-generator CLI operates ad-server Strategy R1 returning 20 distinct funded campaigns per request",
     async fn(ctx) {
       const outA = path.join(ctx.tmpDir, "slates-a.json");
       const outB = path.join(ctx.tmpDir, "slates-b.json");
-      await runBinaryOk("visit-simulator", [
+      await runBinaryOk("visit-generator", [
         "--seed", "42",
         "--requests", "15",
         "--ranker", "R1",
         "--slate-size", "20",
         "--output", outA,
       ]);
-      await runBinaryOk("visit-simulator", [
+      await runBinaryOk("visit-generator", [
         "--seed", "42",
         "--requests", "15",
         "--ranker", "R1",
@@ -234,7 +234,7 @@ export const tests = [
       assert.strictEqual(
         Buffer.compare(fs.readFileSync(outA), fs.readFileSync(outB)),
         0,
-        "visit-simulator CLI must be byte-for-byte deterministic for identical seeds",
+        "visit-generator CLI must be byte-for-byte deterministic for identical seeds",
       );
 
       const data = readJsonFile(outA);

@@ -168,7 +168,7 @@
       <div class="chart-header">
         <div>
           <strong>30-Day Daily Trajectory (100M Impressions · 3 Profiles)</strong>
-          <div style="font-size:0.8rem;color:var(--muted);">Profile 3 (Score-R1 PyTorch LR + pacing-1 + autobid-v0) jumps from 0.1993% (Day 1 cold-start) to 3.8257% late-month CTR (95.6% of 4.00% oracle ceiling), winning 29/30 days</div>
+          <div style="font-size:0.8rem;color:var(--muted);">Profile 3 (Score-R1 PyTorch LR + pacing-1 + autobid-v0) jumps from 0.1981% (Day 1 cold-start) to 3.7888% late-month CTR (94.7% of 4.00% oracle ceiling), winning 29/30 days</div>
         </div>
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
           <div class="legend">
@@ -291,19 +291,19 @@
           pacing: "pacing-1", pacingName: "24h PST Intraday Linear",
           bidding: "bidding-autobid-v0", biddingName: "eCPM Auto-Bid V0",
           slate: 20,
-          ctr: 3.6060, spend: "$3,605,981.00", clicks: "3,605,981", ecpm: "$36.06",
-          gini: "0.136", top10: "14.2%", util: "12.88%", exhausted: "0 / 500", zeroClick: 0,
-          impRange: "82,235 – 332,408 (median 200,292, σ 47,236)",
-          maxUtil: "77.15% (advertiser-46-campaign-08, $8,697 / $11,273)",
-          daysWon: "29 / 30", runtime: "33m 20s",
+          ctr: 3.5745, spend: "$3,574,532.00", clicks: "3,574,532", ecpm: "$35.75",
+          gini: "0.128", top10: "14.3%", util: "12.77%", exhausted: "0 / 500", zeroClick: 0,
+          impRange: "60,096 – 359,670 (median 197,496, σ 45,130)",
+          maxUtil: "77.26% (advertiser-23-campaign-06, $8,817 / $11,412)",
+          daysWon: "29 / 30", runtime: "33m 39s",
           cli: "sim-agent --retrieval Retrieve-V0 --ranker R3 --scoring Score-R1 --pacing pacing-1 --bidding bidding-autobid-v0 --campaign-budget-min-cents 1000000 --campaign-budget-max-cents 10000000 --impressions 100000000",
-          notes: "Personalized PyTorch L2 logistic regression (Score-R1) cold-trained daily on exact sufficient stats + 24h PST linear intraday pacing + eCPM autobidding. Cold-starts at 0.1993% on Day 1, leaps to 3.2291% on Day 2, and reaches 3.8257% across Days 16–30 (peaking at 3.8711% on Day 29 = 96.8% of the 4.00% oracle ceiling), while keeping Spend Gini at just 0.136 across all 500 campaigns.",
-          dailyCtr: [0.1993,3.2291,3.4521,3.5201,3.5282,3.5838,3.6151,3.6366,3.6612,3.6799,3.7009,3.7141,3.7344,3.7687,3.7697,3.7578,3.7901,3.7952,3.7913,3.8111,3.8115,3.8402,3.8282,3.8540,3.8282,3.8468,3.8431,3.8546,3.8711,3.8628],
-          dailySpend: [6645,107637,115071,117337,117608,119461,120505,121221,122040,122664,123364,123803,124480,125624,125657,125259,126338,126506,126375,127038,127050,128007,127607,128467,127608,128225,128104,128486,129035,128759],
+          notes: "Personalized PyTorch L2 logistic regression (Score-R1) cold-trained daily on exact sufficient stats + 24h PST linear intraday pacing + eCPM autobidding. Cold-starts at 0.1981% on Day 1, leaps to 3.2662% on Day 2, and reaches 3.7888% across Days 16–30 (peaking at 3.8255% on Day 29 = 95.6% of the 4.00% oracle ceiling), while keeping Spend Gini at just 0.128 across all 500 campaigns.",
+          dailyCtr: [0.1981,3.2662,3.4226,3.4899,3.4904,3.5485,3.5793,3.5954,3.6150,3.6445,3.6693,3.6874,3.7101,3.7536,3.7336,3.7341,3.7645,3.7656,3.7614,3.7804,3.7784,3.8028,3.7845,3.8094,3.7889,3.8030,3.8000,3.8157,3.8255,3.8177],
+          dailySpend: [6604,108874,114088,116329,116348,118283,119310,119848,120501,121484,122309,122912,123669,125121,124454,124471,125484,125519,125379,126013,125948,126760,126149,126981,126297,126768,126667,127190,127516,127256],
           topCamps: [
-            { id: "advertiser-31-campaign-07", cat: "cat-007", stat: "295,094 impr · 11,106 clicks (3.764%)" },
-            { id: "advertiser-31-campaign-05", cat: "cat-001", stat: "283,116 impr · 10,851 clicks (3.833%)" },
-            { id: "advertiser-11-campaign-03", cat: "cat-007", stat: "296,638 impr · 10,813 clicks (3.645%)" }
+            { id: "advertiser-37-campaign-08", cat: "cat-064", stat: "295,963 impr · 11,256 clicks (3.803%)" },
+            { id: "advertiser-37-campaign-06", cat: "cat-064", stat: "288,870 impr · 11,125 clicks (3.851%)" },
+            { id: "advertiser-07-campaign-08", cat: "cat-064", stat: "285,815 impr · 11,029 clicks (3.859%)" }
           ]
         }
       }
@@ -329,12 +329,12 @@
         <div class="card">
           <div class="kpi-label">Best Overall CTR (100M)</div>
           <div class="kpi-value" style="color: var(--success);">${r3.ctr.toFixed(4)}%</div>
-          <div class="kpi-sub">P3 Score-R1 (${r3Mult.toFixed(2)}× vs P1 · 3.83% Days 16–30)</div>
+          <div class="kpi-sub">P3 Score-R1 (${r3Mult.toFixed(2)}× vs P1 · 3.79% Days 16–30)</div>
         </div>
         <div class="card">
           <div class="kpi-label">30-Day Revenue Lift</div>
-          <div class="kpi-value">+$3,404,944</div>
-          <div class="kpi-sub">P3 $3.61M vs P2 $246k vs P1 $201k (12.88% util.)</div>
+          <div class="kpi-value">+$3,373,495</div>
+          <div class="kpi-sub">P3 $3.57M vs P2 $246k vs P1 $201k (12.77% util.)</div>
         </div>
         <div class="card">
           <div class="kpi-label">Spend Fairness (Gini)</div>

@@ -8,17 +8,17 @@ pub mod bidding;
 pub mod ranker;
 pub mod retrieval;
 pub mod strategy;
-pub mod timestamp;
+pub use world_generator::timestamp;
 
 use std::collections::{HashMap, HashSet};
 use std::io::{Error, ErrorKind};
 
 use ads_ml::PreparedScorer;
-use ads_simulator::{Item, Marketplace};
 use rand::seq::IndexedRandom;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
+use world_generator::{AdServingTarget, Item, Marketplace};
 
 pub use bidding::{
     AuctionWinner, Bid, BiddingStrategy, DEFAULT_BIDDING, compute_bid, run_first_price_auction,
@@ -758,12 +758,60 @@ impl AdServer {
     }
 }
 
+impl AdServingTarget for AdServer {
+    type Ad = ServedAd;
+    type Response = AdResponse;
+
+    fn set_day(&mut self, day: usize) -> Result<(), Error> {
+        AdServer::set_day(self, day)
+    }
+
+    fn set_second_of_day(&mut self, second_of_day: u32) -> Result<(), Error> {
+        AdServer::set_second_of_day(self, second_of_day)
+    }
+
+    fn uses_pst_diurnal_timestamps(&self) -> bool {
+        self.pacing() == PacingStrategy::Pacing1
+    }
+
+    fn serve_ads(&mut self, user_id: &str) -> Self::Response {
+        AdServer::serve_ads(self, user_id)
+    }
+
+    fn into_response_parts(response: Self::Response) -> (String, Vec<Self::Ad>) {
+        (response.user_id, response.ads)
+    }
+
+    fn ad_slot_position(ad: &Self::Ad) -> usize {
+        ad.slot_position
+    }
+
+    fn ad_campaign_index(ad: &Self::Ad) -> usize {
+        ad.campaign_index
+    }
+
+    fn ad_category_id(ad: &Self::Ad) -> &str {
+        &ad.category_id
+    }
+
+    fn record_impression(
+        &mut self,
+        day: usize,
+        campaign_index: usize,
+        clicked: bool,
+    ) -> Result<Option<u64>, Error> {
+        AdServer::record_impression(self, day, campaign_index, clicked)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
 
-    use ads_simulator::generate_marketplace;
     use rand_chacha::ChaCha8Rng;
+    use world_generator::{
+        DEFAULT_DAILY_REQUESTS, VisitGenerator, VisitGeneratorConfig, generate_marketplace,
+    };
 
     use crate::{
         AdServer, AdServerConfig, AdsRanker, CampaignState, R1_SLATE_SIZE, RankerStrategy,
@@ -1112,5 +1160,80 @@ mod tests {
         let json = serde_json::to_string(&spec).unwrap();
         let parsed: crate::AdServerSpec = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, spec);
+    }
+
+    #[test]
+    fn visit_generator_drives_ad_server_in_natural_and_targeted_modes() {
+        let mp = generate_marketplace(42);
+        let user_ids: Vec<String> = mp.users.iter().map(|u| u.id.clone()).collect();
+        let category_ids: Vec<String> = mp.categories.iter().map(|c| c.id.clone()).collect();
+
+        let mut ad_server = AdServer::from_marketplace(
+            &mp,
+            AdServerConfig {
+                seed: 42,
+                campaign_budget_cents: Some(100),
+                cpc_cents: 100,
+                ranker: RankerStrategy::R1,
+                slate_size: 20,
+                ..AdServerConfig::default()
+            },
+        )
+        .unwrap();
+        let mut generator = VisitGenerator::new(
+            user_ids.clone(),
+            category_ids.clone(),
+            VisitGeneratorConfig {
+                seed: 42,
+                preference_seed: None,
+                days: 30,
+                daily_requests: DEFAULT_DAILY_REQUESTS,
+                target_impressions: Some(1_000),
+                max_click_probability: 0.0,
+            },
+        )
+        .unwrap();
+
+        let mut seen_req1 = HashSet::new();
+        let day1 = generator
+            .run_day(1, &mut ad_server, |imp| {
+                assert!(!imp.clicked);
+                if imp.request_id == 1 {
+                    assert!(seen_req1.insert(imp.ad.campaign_id.clone()));
+                }
+            })
+            .unwrap();
+        assert_eq!(day1.impressions, 34);
+        assert_eq!(day1.ad_requests, 2);
+        assert_eq!(seen_req1.len(), 20);
+
+        // Unaffordable budget cannot meet a target.
+        let mut broke_server = AdServer::from_marketplace(
+            &mp,
+            AdServerConfig {
+                seed: 42,
+                campaign_budget_cents: Some(50),
+                cpc_cents: 100,
+                ranker: RankerStrategy::R1,
+                slate_size: 20,
+                ..AdServerConfig::default()
+            },
+        )
+        .unwrap();
+        let mut gen2 = VisitGenerator::new(
+            user_ids,
+            category_ids,
+            VisitGeneratorConfig {
+                seed: 42,
+                preference_seed: None,
+                days: 30,
+                daily_requests: DEFAULT_DAILY_REQUESTS,
+                target_impressions: Some(30),
+                ..VisitGeneratorConfig::default()
+            },
+        )
+        .unwrap();
+        let err = gen2.run_day(1, &mut broke_server, |_| {}).unwrap_err();
+        assert!(err.to_string().contains("cannot be reached on day 1"));
     }
 }

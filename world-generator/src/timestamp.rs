@@ -1,4 +1,4 @@
-//! PST (UTC-08:00) diurnal impression timestamps for intraday pacing schedules (`Pacing-1`).
+//! PST (UTC-08:00) diurnal visit timestamps for intraday pacing schedules (`Pacing-1`).
 
 use std::fmt;
 

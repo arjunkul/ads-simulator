@@ -154,19 +154,19 @@
     const pieceSummary = (id, fallback) => (pieceMap.get(id) ? pieceMap.get(id).summary : fallback);
 
     const lanes = [
-      { id: "lane-mp", title: "1. ads-simulator", subtitle: "Marketplace & Preferences", x: 12, y: 14, w: 234, h: 616, color: "#38bdf8" },
-      { id: "lane-serve", title: "2. visit-simulator + ad-server", subtitle: "Visits & ClickOracle <-> Ad-Server (R1)", x: 262, y: 14, w: 344, h: 616, color: "#818cf8" },
-      { id: "lane-sim", title: "3. simulation + analyzer", subtitle: "30-Day Orchestrator & Auto-Analysis", x: 622, y: 14, w: 274, h: 616, color: "#34d399" },
+      { id: "lane-mp", title: "1. world-generator", subtitle: "Marketplace, Visits & Oracle", x: 12, y: 14, w: 234, h: 616, color: "#38bdf8" },
+      { id: "lane-serve", title: "2. visit-generator + ad-server", subtitle: "Visits (S1) <-> Ad-Server (R1)", x: 262, y: 14, w: 344, h: 616, color: "#818cf8" },
+      { id: "lane-sim", title: "3. oracle + simulation + analyzer", subtitle: "UserActivityOracle & 30d Loop", x: 622, y: 14, w: 274, h: 616, color: "#34d399" },
       { id: "lane-ui", title: "4. sim-agent + dashboard", subtitle: "SVG Plot, Live API & Export", x: 912, y: 14, w: 236, h: 616, color: "#fbbf24" },
     ];
 
     const nodes = [
-      // Lane 1: ads-simulator
+      // Lane 1: world-generator (marketplace)
       {
         id: "taxonomy-schema",
         pieceId: "taxonomy-schema",
         kind: "process",
-        crate: "ads-simulator",
+        crate: "world-generator",
         title: pieceName("taxonomy-schema", "Product Taxonomy & Schema"),
         sub: "10 groups x 10 categories · Schema v1",
         desc: pieceSummary("taxonomy-schema", "Defines 10x10 taxonomy and Schema v1 contract."),
@@ -177,7 +177,7 @@
         id: "advertiser-catalog",
         pieceId: "advertiser-catalog",
         kind: "process",
-        crate: "ads-simulator",
+        crate: "world-generator",
         title: pieceName("advertiser-catalog", "Advertiser & Catalog Generator"),
         sub: "50 merchants x 20 offers (1,000 ads)",
         desc: pieceSummary("advertiser-catalog", "Generates 50 merchants and 1,000 catalog offers."),
@@ -188,7 +188,7 @@
         id: "organic-inventory",
         pieceId: "organic-inventory",
         kind: "process",
-        crate: "ads-simulator",
+        crate: "world-generator",
         title: pieceName("organic-inventory", "Organic Listing Inventory"),
         sub: "5,000 non-ad listings (50/cat)",
         desc: pieceSummary("organic-inventory", "Generates 5,000 non-ad listings across 100 categories."),
@@ -199,7 +199,7 @@
         id: "user-browsing",
         pieceId: "user-browsing",
         kind: "process",
-        crate: "ads-simulator",
+        crate: "world-generator",
         title: pieceName("user-browsing", "Shopper Roster & Organic Browsing"),
         sub: "1,000 user_ids · 12k organic views",
         desc: pieceSummary("user-browsing", "1,000 shopper IDs and 12,000 shuffled organic browsing events."),
@@ -210,7 +210,7 @@
         id: "marketplace-json",
         pieceId: null,
         kind: "artifact",
-        crate: "ads-simulator",
+        crate: "world-generator",
         title: "marketplace.json",
         sub: "ChaCha8 seeded Schema v1",
         desc: "Deterministic synthetic marketplace snapshot loaded via file or generated in memory.",
@@ -218,15 +218,15 @@
         flows: ["marketplace"],
       },
 
-      // Lane 2: visit-simulator + ad-server
+      // Lane 2: world-generator::visit_generator + ad-server
       {
-        id: "visit-simulator",
-        pieceId: "visit-simulator",
+        id: "visit-generator",
+        pieceId: "visit-generator",
         kind: "process",
-        crate: "visit-simulator",
-        title: pieceName("visit-simulator", "Visit Simulator, Preferences & Click Oracle"),
-        sub: "5 prefs/user (S3) · Visits (S1) · ClickOracle (S2)",
-        desc: pieceSummary("visit-simulator", "Assigns 5 preferred categories/user (Stream 3), simulates visit arrivals (Stream 1), and runs ClickOracle (Stream 2)."),
+        crate: "world-generator",
+        title: pieceName("visit-generator", "Visit Generator & Diurnal Arrivals"),
+        sub: "Visits (S1) · PST Diurnal · AdServingTarget",
+        desc: pieceSummary("visit-generator", "Samples preference-independent shopper visits (Stream 1) with optional PST diurnal timestamps and calls AdServer::serve_ads(user_id)."),
         x: 278, y: 66, w: 312, h: 70, color: "#818cf8",
         flows: ["ad-serving", "cpc-loop"],
       },
@@ -286,15 +286,15 @@
         flows: ["ad-serving", "cpc-loop"],
       },
 
-      // Lane 3: visit click oracle + simulation orchestrator + simulation-analyzer
+      // Lane 3: world-generator::user_activity_oracle + simulation orchestrator + simulation-analyzer
       {
         id: "click-check",
-        pieceId: "visit-simulator",
+        pieceId: "user-activity-oracle",
         kind: "decision",
-        crate: "visit-simulator",
-        title: "ClickOracle?",
-        sub: "4% pref / 0% else · Stream 2",
-        desc: "VisitSimulator's ClickOracle evaluates whether the visiting user clicks each served ad (4% preferred category, 0% otherwise) and calls ad_server.record_impression().",
+        crate: "world-generator",
+        title: "UserActivityOracle?",
+        sub: "5 prefs (S3) · 4%/0% (S2)",
+        desc: pieceSummary("user-activity-oracle", "UserActivityOracle owns 5 preferred categories/user (Stream 3), evaluates clicks (4% preferred / 0% otherwise on Stream 2), and triggers ad_server.record_impression()."),
         cx: 759, cy: 144, rx: 86, ry: 32, color: "#fbbf24",
         flows: ["cpc-loop"],
       },
@@ -305,7 +305,7 @@
         crate: "ads-marketplace-simulation",
         title: pieceName("delivery-click-engine", "30-Day Simulation Orchestrator"),
         sub: "30d loop · Score-R1 / Score-XGB · Ledger report",
-        desc: pieceSummary("delivery-click-engine", "Orchestrates VisitSimulator and AdServer across 30 days, drives daily Score-R1 / Score-XGB ML training, and aggregates balanced Schema v1 ledgers."),
+        desc: pieceSummary("delivery-click-engine", "Orchestrates world-generator (VisitGenerator + UserActivityOracle) and AdServer across 30 days, drives daily Score-R1 / Score-XGB ML training, and aggregates balanced Schema v1 ledgers."),
         x: 638, y: 214, w: 242, h: 76, color: "#34d399",
         flows: ["cpc-loop"],
       },
@@ -386,20 +386,20 @@
       { from: "organic-inventory", to: "user-browsing", label: "9 aff + 3 exp", d: "M 129 338 L 129 378", lx: 168, ly: 360, flows: ["marketplace"] },
       { from: "user-browsing", to: "marketplace-json", label: "snapshot", d: "M 129 450 L 129 500", lx: 164, ly: 476, flows: ["marketplace"] },
 
-      // Cross-lane: ads-simulator -> visit-simulator + ad-server
-      { from: "user-browsing", to: "visit-simulator", label: "user_ids", d: "M 234 396 C 254 396, 254 101, 278 101", lx: 256, ly: 254, color: "#38bdf8", flows: ["ad-serving", "cpc-loop"] },
+      // Cross-lane: world-generator -> visit-generator + ad-server
+      { from: "user-browsing", to: "visit-generator", label: "user_ids", d: "M 234 396 C 254 396, 254 101, 278 101", lx: 256, ly: 254, color: "#38bdf8", flows: ["ad-serving", "cpc-loop"] },
       { from: "advertiser-catalog", to: "ad-server", label: "500 campaigns", d: "M 234 202 C 254 202, 254 211, 278 211", lx: 256, ly: 192, flows: ["ad-serving"] },
 
-      // Visit simulator -> Ad-Server -> R1 -> Served Slate
-      { from: "visit-simulator", to: "ad-server", label: "serve_ads(user_id)", d: "M 434 136 L 434 176", lx: 492, ly: 158, color: "#818cf8", flows: ["ad-serving", "cpc-loop"] },
+      // Visit generator -> Ad-Server -> R1 -> Served Slate
+      { from: "visit-generator", to: "ad-server", label: "serve_ads(user_id)", d: "M 434 136 L 434 176", lx: 492, ly: 158, color: "#818cf8", flows: ["ad-serving", "cpc-loop"] },
       { from: "ad-server", to: "active-check", label: "check pool", d: "M 404 246 L 404 268", lx: 446, ly: 258, flows: ["ad-serving", "cpc-loop"] },
       { from: "active-check", to: "skip-slot", label: "No", d: "M 492 300 L 508 300", lx: 499, ly: 288, color: "#fb7185", flows: ["ad-serving", "cpc-loop"] },
       { from: "active-check", to: "ads-ranker-r1", label: "Yes", d: "M 404 332 L 404 368", lx: 424, ly: 350, color: "#34d399", flows: ["ad-serving", "cpc-loop"] },
       { from: "ads-ranker-r1", to: "served-slate", label: "20 random funded", d: "M 434 438 L 434 486", lx: 496, ly: 462, color: "#a78bfa", flows: ["ad-serving", "cpc-loop"] },
 
-      // Served Slate -> VisitSimulator ClickOracle -> CPC Retirement Loop + Orchestrator -> Report
+      // Served Slate -> UserActivityOracle -> CPC Retirement Loop + Orchestrator -> Report
       { from: "served-slate", to: "click-check", label: "evaluate slate", d: "M 574 513 C 612 513, 612 144, 673 144", lx: 616, ly: 356, flows: ["cpc-loop"] },
-      { from: "visit-simulator", to: "click-check", label: "user prefs", d: "M 590 101 C 632 101, 632 126, 673 126", lx: 632, ly: 94, dashed: true, color: "#38bdf8", flows: ["cpc-loop"] },
+      { from: "visit-generator", to: "click-check", label: "user_index", d: "M 590 101 C 632 101, 632 126, 673 126", lx: 632, ly: 94, dashed: true, color: "#38bdf8", flows: ["cpc-loop"] },
       { from: "click-check", to: "ad-server", label: "record_impression (-CPC)", d: "M 673 156 C 624 156, 624 211, 590 211", lx: 632, ly: 196, dashed: true, color: "#fbbf24", flows: ["cpc-loop"] },
       { from: "click-check", to: "delivery-click-engine", label: "impressions & clicks", d: "M 759 176 L 759 214", lx: 816, ly: 196, flows: ["cpc-loop"] },
       { from: "delivery-click-engine", to: "report-json", label: "record day", d: "M 759 290 L 759 334", lx: 794, ly: 312, flows: ["cpc-loop", "analysis"] },
@@ -838,7 +838,7 @@
 
   function renderPieceDataflow(container, catalog) {
     const stages = [
-      { name: "Marketplace Generation", color: "#38bdf8", colX: 30 },
+      { name: "World Generation", color: "#38bdf8", colX: 30 },
       { name: "Ad Serving & Simulation", color: "#818cf8", colX: 405 },
       { name: "Analysis & Visualization", color: "#34d399", colX: 780 },
     ];
@@ -865,7 +865,7 @@
       class: "pipeline-svg",
       viewBox: "0 0 1120 " + svgHeight,
       role: "img",
-      "aria-label": "11-piece simulator architecture dataflow pipeline",
+      "aria-label": "12-piece simulator architecture dataflow pipeline",
     });
 
     svg.appendChild(

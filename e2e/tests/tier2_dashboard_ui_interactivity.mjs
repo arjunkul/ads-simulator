@@ -58,7 +58,7 @@ export const tests = [
 
           assert.strictEqual(res.foundInput, true, "Search input must exist");
           assert.strictEqual(res.zeroCount, 0, `Expected 0 visible pieces for nonsense search, got ${res.zeroCount}`);
-          assert.strictEqual(res.restoredCount, 11, `Clearing search must restore 11 pieces, got ${res.restoredCount}`);
+          assert.strictEqual(res.restoredCount, 12, `Clearing search must restore 12 pieces, got ${res.restoredCount}`);
           assert.deepStrictEqual(session.consoleErrors, []);
           assert.deepStrictEqual(session.pageErrors, []);
         } finally {
@@ -208,7 +208,7 @@ export const tests = [
     tier: 2,
     area: AREA,
     features: ["F16", "F17"],
-    title: "Static exported index.html renders all 11 pieces and budget chart directly over file://",
+    title: "Static exported index.html renders all 12 pieces and budget chart directly over file://",
     timeoutMs: 45_000,
     async fn(ctx) {
       const exportDir = path.join(ctx.tmpDir, "file-export");
@@ -312,7 +312,7 @@ export const tests = [
 
           assert.strictEqual(res.foundInput, true, "Search input must exist");
           assert.strictEqual(res.xssTriggered, false, "XSS payload must NEVER execute in search filter");
-          assert.strictEqual(res.restored, 11, "Clearing search input must restore all 11 pieces");
+          assert.strictEqual(res.restored, 12, "Clearing search input must restore all 12 pieces");
           assert.deepStrictEqual(session.pageErrors, []);
         } finally {
           await session.close();

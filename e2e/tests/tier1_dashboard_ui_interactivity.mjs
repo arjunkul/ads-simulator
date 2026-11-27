@@ -65,7 +65,7 @@ export const tests = [
     tier: 1,
     area: AREA,
     features: ["F16"],
-    title: "All 11 simulator pieces and interactive architecture pipeline render with positive geometry",
+    title: "All 12 simulator pieces and interactive architecture pipeline render with positive geometry",
     timeoutMs: 45_000,
     async fn() {
       const server = await startDashboardServer();
@@ -94,7 +94,7 @@ export const tests = [
           })()`);
 
           assert.deepStrictEqual(check.missingNames, [], `Missing piece names in DOM: ${check.missingNames.join(", ")}`);
-          assert.strictEqual(check.visibleSummaryCount, 11, `Expected all 11 piece summaries visible, got ${check.visibleSummaryCount}`);
+          assert.strictEqual(check.visibleSummaryCount, 12, `Expected all 12 piece summaries visible, got ${check.visibleSummaryCount}`);
           assert.ok(check.svgCount >= 1, "Expected at least one rendered SVG diagram/chart with positive bounding box");
           assert.deepStrictEqual(session.consoleErrors, []);
           assert.deepStrictEqual(session.pageErrors, []);
@@ -112,7 +112,7 @@ export const tests = [
     tier: 1,
     area: AREA,
     features: ["F16"],
-    title: "Per-piece feature explorer search narrows visible pieces and restores all 11 on clear",
+    title: "Per-piece feature explorer search narrows visible pieces and restores all 12 on clear",
     timeoutMs: 45_000,
     async fn() {
       const server = await startDashboardServer();
@@ -140,16 +140,16 @@ export const tests = [
           })()`);
 
           assert.strictEqual(res.foundInput, true, "Dashboard UI must provide a visible semantic search/filter input");
-          assert.strictEqual(res.initial, 11, `Expected 11 visible pieces initially, got ${res.initial}`);
+          assert.strictEqual(res.initial, 12, `Expected 12 visible pieces initially, got ${res.initial}`);
           assert.ok(
-            res.filteredCount >= 1 && res.filteredCount < 11,
-            `Expected search for "${targetPiece.name}" to narrow pieces to 1..10, got ${res.filteredCount}`,
+            res.filteredCount >= 1 && res.filteredCount < 12,
+            `Expected search for "${targetPiece.name}" to narrow pieces to 1..11, got ${res.filteredCount}`,
           );
           assert.ok(
             res.filteredMatched.includes(targetPiece.id),
             `Target piece "${targetPiece.id}" must remain visible after searching its name`,
           );
-          assert.strictEqual(res.restored, 11, `Clearing search must restore all 11 pieces, got ${res.restored}`);
+          assert.strictEqual(res.restored, 12, `Clearing search must restore all 12 pieces, got ${res.restored}`);
           assert.deepStrictEqual(session.consoleErrors, []);
           assert.deepStrictEqual(session.pageErrors, []);
         } finally {
@@ -359,7 +359,7 @@ export const tests = [
             return { flowText, analysisText, topRows, findingCards, slateRows, summaryText };
           })()`);
 
-          for (const token of ["Visit Simulator", "Ad-Server", "R1", "Simulation Analyzer"]) {
+          for (const token of ["world-generator", "Visit Generator", "UserActivityOracle", "Ad-Server", "R1", "Simulation Analyzer"]) {
             assert.ok(
               initial.flowText.includes(token),
               `Component flowchart SVG must include "${token}"`,

@@ -158,7 +158,7 @@ export const tests = [
       const outA = path.join(ctx.tmpDir, "from-file");
       const outB = path.join(ctx.tmpDir, "in-memory");
 
-      await runBinaryOk("ads-simulator", ["--seed", "123", "--output-dir", mktDir]);
+      await runBinaryOk("world-generator", ["--seed", "123", "--output-dir", mktDir]);
       await runBinaryOk("sim-agent", [
         "--marketplace", path.join(mktDir, "marketplace.json"),
         "--seed", "42",

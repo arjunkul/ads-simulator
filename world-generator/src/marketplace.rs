@@ -1,14 +1,13 @@
 //! Synthetic marketplace data for Recipes and SimRuns.
 
-mod taxonomy;
-
 use std::collections::HashSet;
 
 use rand::seq::{SliceRandom, index};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
-use taxonomy::TAXONOMY;
+
+use crate::taxonomy::TAXONOMY;
 
 pub const SCHEMA_VERSION: u32 = 1;
 pub const CURRENCY: &str = "USD";

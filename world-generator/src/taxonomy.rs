@@ -1,5 +1,5 @@
 // The order determines stable category IDs.
-pub(crate) const TAXONOMY: &[(&str, [&str; crate::CATEGORIES_PER_GROUP])] = &[
+pub(crate) const TAXONOMY: &[(&str, [&str; crate::marketplace::CATEGORIES_PER_GROUP])] = &[
     (
         "Electronics",
         [

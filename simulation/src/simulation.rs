@@ -1,7 +1,7 @@
 //! 30-day CPC simulation orchestrator.
 //!
-//! Orchestrates [`visit_simulator::VisitSimulator`] (user visit arrivals with optional PST diurnal
-//! timestamps for `pacing-1`, ad slot generation, and [`visit_simulator::ClickOracle`]),
+//! Orchestrates [`world_generator::VisitGenerator`] (user visit arrivals with optional PST diurnal
+//! timestamps for `pacing-1`, ad slot generation, and [`world_generator::UserActivityOracle`]),
 //! [`ad_server::AdServer`] (explicit 5-axis `Retrieval × Pacing × Bidding × Scoring × Ranking`
 //! strategy pipeline, including `Retrieve-V0`, `Pacing-1`, `bidding-autobid-v0`, and daily
 //! `Score-R1` PyTorch LR / `Score-XGB` XGBoost GBDT training via `ads-ml`), and balanced Schema v1
@@ -29,18 +29,18 @@ use ads_ml::{
     AdCandidate, ImpressionClickRef, ImpressionLogStore, PreparedScorer, PyTorchTrainer,
     SufficientStatsPayload, TrainingConfig, XgboostTrainer, XgboostTrainingConfig,
 };
-use ads_simulator::{Item, Marketplace};
 use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
-use visit_simulator::{
-    CLICK_RNG_STREAM as VISIT_CLICK_RNG_STREAM, DEFAULT_DAILY_REQUESTS,
-    MAX_CLICK_PROBABILITY as VISIT_MAX_CLICK_PROBABILITY, VisitSimulator, VisitSimulatorConfig,
+use world_generator::{
+    CLICK_RNG_STREAM as WORLD_CLICK_RNG_STREAM, DEFAULT_DAILY_REQUESTS, Item,
+    MAX_CLICK_PROBABILITY as WORLD_MAX_CLICK_PROBABILITY, Marketplace, VisitGenerator,
+    VisitGeneratorConfig,
 };
 
 pub const SCHEMA_VERSION: u32 = SERVER_SCHEMA_VERSION;
 pub const DAYS: usize = SERVER_DAYS;
 pub const CAMPAIGNS_PER_ADVERTISER: usize = SERVER_CAMPAIGNS_PER_ADVERTISER;
-pub const MAX_CLICK_PROBABILITY: f64 = VISIT_MAX_CLICK_PROBABILITY;
+pub const MAX_CLICK_PROBABILITY: f64 = WORLD_MAX_CLICK_PROBABILITY;
 pub const DEFAULT_SEED: u64 = SERVER_DEFAULT_SEED;
 pub const DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS: u64 = SERVER_DEFAULT_MIN_BUDGET;
 pub const DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS: u64 = SERVER_DEFAULT_MAX_BUDGET;
@@ -51,7 +51,7 @@ pub const DEFAULT_SCORING: ScoringStrategy = SERVER_DEFAULT_SCORING;
 pub const DEFAULT_PACING: PacingStrategy = SERVER_DEFAULT_PACING;
 pub const DEFAULT_BIDDING: BiddingStrategy = SERVER_DEFAULT_BIDDING;
 pub const DEFAULT_SLATE_SIZE: usize = R1_SLATE_SIZE;
-pub const CLICK_RNG_STREAM: u64 = VISIT_CLICK_RNG_STREAM;
+pub const CLICK_RNG_STREAM: u64 = WORLD_CLICK_RNG_STREAM;
 
 const fn default_min_campaign_budget_cents() -> u64 {
     DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS
@@ -572,10 +572,10 @@ pub fn run_with_log_dir<'a>(
         .iter()
         .map(|c| c.id.clone())
         .collect();
-    let mut visit_simulator = VisitSimulator::new(
+    let mut visit_generator = VisitGenerator::new(
         user_ids.clone(),
         category_ids,
-        VisitSimulatorConfig {
+        VisitGeneratorConfig {
             seed: config.seed,
             preference_seed: Some(marketplace.seed.cast_unsigned()),
             days: DAYS,
@@ -602,7 +602,7 @@ pub fn run_with_log_dir<'a>(
         };
         let mut write_err: Option<Error> = None;
 
-        let day_stats = visit_simulator.run_day(day, &mut ad_server, |impression| {
+        let day_stats = visit_generator.run_day(day, &mut ad_server, |impression| {
             if use_ml_scoring {
                 if let (Some(&u_idx), Some(&k_idx)) = (
                     user_idx_map.get(impression.user_id.as_str()),
@@ -751,7 +751,7 @@ mod tests {
         BiddingStrategy, PacingStrategy, R1_SLATE_SIZE, RankerStrategy, RetrievalStrategy,
         ScoringStrategy,
     };
-    use ads_simulator::generate_marketplace;
+    use world_generator::generate_marketplace;
 
     use super::{
         Activity, CAMPAIGNS_PER_ADVERTISER, Config, DAYS, DEFAULT_CPC_CENTS,

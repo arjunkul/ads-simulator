@@ -1521,7 +1521,7 @@ export function validateMarketplaceJson(mp, opts = {}) {
     assert.strictEqual(organicPerCat.get(catId), 50, `category ${catId} must have 50 organic items`);
   }
 
-  // Users: 1000 total with unique IDs (preferred categories moved to visit-simulator)
+  // Users: 1000 total with unique IDs (preferred categories live in world-generator::user_activity_oracle)
   assert.ok(Array.isArray(mp.users), "marketplace.users must be an array");
   assert.strictEqual(mp.users.length, 1000, `expected 1000 users, got ${mp.users.length}`);
   const userIdsSeen = new Set();
@@ -2559,8 +2559,8 @@ export function validateSimulatorCatalog(catalog, opts = {}) {
   );
 
   assert.ok(
-    Array.isArray(catalog.pieces) && catalog.pieces.length === 11,
-    `catalog.pieces must contain exactly 11 pieces, got ${catalog.pieces?.length}`,
+    Array.isArray(catalog.pieces) && catalog.pieces.length === 12,
+    `catalog.pieces must contain exactly 12 pieces, got ${catalog.pieces?.length}`,
   );
 
   const seenIds = new Set();
@@ -2643,9 +2643,8 @@ export function validateSimulatorCatalog(catalog, opts = {}) {
   }
 
   for (const requiredCrate of [
-    "ads-simulator",
+    "world-generator",
     "ad-server",
-    "visit-simulator",
     "ads-marketplace-simulation",
     "simulation-analyzer",
     "sim-agent",
@@ -2656,7 +2655,7 @@ export function validateSimulatorCatalog(catalog, opts = {}) {
       `catalog.pieces must cover crate "${requiredCrate}" (observed crates: ${[...cratesSeen].join(", ")})`,
     );
   }
-  assert.ok(totalGaps >= 3, `catalog must honestly report at least 3 gaps_and_simplifications across the 11 pieces, got ${totalGaps}`);
+  assert.ok(totalGaps >= 3, `catalog must honestly report at least 3 gaps_and_simplifications across the 12 pieces, got ${totalGaps}`);
 
   // Pipeline edges
   assert.ok(
@@ -2676,8 +2675,8 @@ export function validateSimulatorCatalog(catalog, opts = {}) {
   }
   assert.strictEqual(
     connectedNodes.size,
-    11,
-    `All 11 pieces must be connected in pipeline_edges; connected=${connectedNodes.size}`,
+    12,
+    `All 12 pieces must be connected in pipeline_edges; connected=${connectedNodes.size}`,
   );
 
   // Summary counts
@@ -2688,7 +2687,7 @@ export function validateSimulatorCatalog(catalog, opts = {}) {
     assertNonNegInt(v, `catalog.summary_counts.${k}`);
   }
   if (Object.hasOwn(catalog.summary_counts, "pieces")) {
-    assert.strictEqual(catalog.summary_counts.pieces, 11, "summary_counts.pieces must equal 11");
+    assert.strictEqual(catalog.summary_counts.pieces, 12, "summary_counts.pieces must equal 12");
   }
   if (Object.hasOwn(catalog.summary_counts, "total_features")) {
     assert.strictEqual(catalog.summary_counts.total_features, totalFeatures, "summary_counts.total_features mismatch");

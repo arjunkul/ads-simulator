@@ -144,7 +144,7 @@ mod tests {
         DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_PACING, DEFAULT_RANKER, DEFAULT_RETRIEVAL,
         DEFAULT_SEED, DEFAULT_SLATE_SIZE, OwnedReport, run,
     };
-    use ads_simulator::generate_marketplace;
+    use world_generator::generate_marketplace;
     use clap::Parser;
     use tempfile::TempDir;
 

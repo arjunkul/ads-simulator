@@ -23,10 +23,10 @@ export const tests = [
       const dNeg9 = path.join(ctx.tmpDir, "neg9");
       const dPos = path.join(ctx.tmpDir, "pos42");
 
-      await runBinaryOk("ads-simulator", ["--seed", "-42", "--output-dir", dNegA]);
-      await runBinaryOk("ads-simulator", ["--seed", "-42", "--output-dir", dNegB]);
-      await runBinaryOk("ads-simulator", ["--seed", "-9", "--output-dir", dNeg9]);
-      await runBinaryOk("ads-simulator", ["--seed", "42", "--output-dir", dPos]);
+      await runBinaryOk("world-generator", ["--seed", "-42", "--output-dir", dNegA]);
+      await runBinaryOk("world-generator", ["--seed", "-42", "--output-dir", dNegB]);
+      await runBinaryOk("world-generator", ["--seed", "-9", "--output-dir", dNeg9]);
+      await runBinaryOk("world-generator", ["--seed", "42", "--output-dir", dPos]);
 
       const bA = fs.readFileSync(path.join(dNegA, "marketplace.json"));
       const bB = fs.readFileSync(path.join(dNegB, "marketplace.json"));
@@ -57,7 +57,7 @@ export const tests = [
       const rawOutputs = [];
       for (const c of cases) {
         const dir = path.join(ctx.tmpDir, `seed-${c.name}`);
-        await runBinaryOk("ads-simulator", ["--seed", c.seedStr, "--output-dir", dir]);
+        await runBinaryOk("world-generator", ["--seed", c.seedStr, "--output-dir", dir]);
         const raw = fs.readFileSync(path.join(dir, "marketplace.json"), "utf8");
         assert.ok(c.regex.test(raw), `Raw JSON must preserve exact i64 seed ${c.seedStr}`);
         validateMarketplaceJson(JSON.parse(raw), { expectedSeed: null });
@@ -77,7 +77,7 @@ export const tests = [
     title: "Deeply nested non-existent --output-dir is auto-created with zero temp residue",
     async fn(ctx) {
       const deepDir = path.join(ctx.tmpDir, "deep", "nested", "marketplace", "out");
-      await runBinaryOk("ads-simulator", ["--seed", "42", "--output-dir", deepDir]);
+      await runBinaryOk("world-generator", ["--seed", "42", "--output-dir", deepDir]);
       assert.deepStrictEqual(
         fs.readdirSync(deepDir),
         ["marketplace.json"],
@@ -95,8 +95,8 @@ export const tests = [
     title: "Atomic overwrite on rerun replaces existing marketplace.json cleanly",
     async fn(ctx) {
       const dir = path.join(ctx.tmpDir, "overwrite");
-      await runBinaryOk("ads-simulator", ["--seed", "42", "--output-dir", dir]);
-      await runBinaryOk("ads-simulator", ["--seed", "77", "--output-dir", dir]);
+      await runBinaryOk("world-generator", ["--seed", "42", "--output-dir", dir]);
+      await runBinaryOk("world-generator", ["--seed", "77", "--output-dir", dir]);
       assert.deepStrictEqual(fs.readdirSync(dir), ["marketplace.json"]);
       validateMarketplaceJson(readJsonFile(path.join(dir, "marketplace.json")), { expectedSeed: 77 });
     },
@@ -110,7 +110,7 @@ export const tests = [
     title: "Missing required --output-dir fails with non-zero exit and usage error",
     async fn(ctx) {
       for (const args of [[], ["--seed", "42"]]) {
-        const res = await runBinary("ads-simulator", args);
+        const res = await runBinary("world-generator", args);
         assert.notStrictEqual(res.code, 0, `Expected non-zero exit for args ${JSON.stringify(args)}`);
         assert.ok(res.stderr.trim().length > 0, "Expected non-empty stderr message");
         assert.ok(/--output-dir|usage/i.test(res.stderr), `stderr should mention --output-dir or usage, got: ${res.stderr}`);
@@ -132,7 +132,7 @@ export const tests = [
         ["--output-dir", outDir, "--seed"],
       ];
       for (const args of badInvocations) {
-        const res = await runBinary("ads-simulator", args);
+        const res = await runBinary("world-generator", args);
         assert.notStrictEqual(res.code, 0, `Expected non-zero exit for ${JSON.stringify(args)}`);
         assert.ok(res.stderr.trim().length > 0, `Expected stderr diagnostic for ${JSON.stringify(args)}`);
       }
@@ -149,7 +149,7 @@ export const tests = [
     async fn(ctx) {
       const outDir = path.join(ctx.tmpDir, "bad-seeds");
       for (const badSeed of ["abc", "3.14", "9223372036854775808", "-9223372036854775809"]) {
-        const res = await runBinary("ads-simulator", ["--output-dir", outDir, "--seed", badSeed]);
+        const res = await runBinary("world-generator", ["--output-dir", outDir, "--seed", badSeed]);
         assert.notStrictEqual(res.code, 0, `Expected non-zero exit for --seed ${badSeed}`);
         assert.ok(res.stderr.trim().length > 0, `Expected stderr diagnostic for --seed ${badSeed}`);
       }
