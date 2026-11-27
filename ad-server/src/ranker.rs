@@ -199,7 +199,7 @@ pub trait AdsRanker: Send + Sync {
         rng: &mut ChaCha8Rng,
     ) -> Vec<usize>;
 
-    /// Select campaigns with optional request-time ML scorer (`Score-R1`) and bidding context.
+    /// Select campaigns with optional request-time ML scorer (`Score-R1`, `Score-XGB`) and bidding context.
     fn select_campaigns_with_context(
         &self,
         user_id: &str,
@@ -366,9 +366,9 @@ fn select_scored_slate(
     let bidding = ctx.map(|c| c.bidding).unwrap_or(BiddingStrategy::Basebid);
     let mut selected = Vec::with_capacity(target);
 
-    // When Score-R1 (PyTorch logistic regression) is active, score all eligible campaigns directly
-    // via the daily trained PreparedScorer (or uniform cold-start on Day 1 before any model exists).
-    let (observed, total_impressions) = if scoring == ScoringStrategy::ScoreR1 {
+    // When an offline-trained ads-ml model (Score-R1 or Score-XGB) is active, score all eligible
+    // campaigns directly via the daily trained PreparedScorer (or uniform cold-start on Day 1).
+    let (observed, total_impressions) = if scoring.is_ml_model() {
         (eligible_indices.to_vec(), 1u64)
     } else {
         let mut cold_start = Vec::new();
@@ -412,7 +412,7 @@ fn select_scored_slate(
     let mut scored: Vec<(usize, f64, u64)> = observed
         .into_iter()
         .map(|idx| {
-            let raw_score = if scoring == ScoringStrategy::ScoreR1 {
+            let raw_score = if scoring.is_ml_model() {
                 match ml_pair {
                     Some((scorer, user_idx)) => scorer.score_ctr(user_idx, 0, idx),
                     None => 1.0,

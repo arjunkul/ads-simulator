@@ -326,8 +326,8 @@ pub struct AdResponse {
 }
 
 /// Stateful ad-server owning campaign budgets, an O(1) [`CampaignRetriever`] index (`Retrieve-V0`),
-/// optional `ads-ml` [`PreparedScorer`] (`Score-R1`), and explicit 5-axis serving strategies
-/// (`Retrieval × Pacing × Bidding × Scoring × Ranking`).
+/// optional `ads-ml` [`PreparedScorer`] (`Score-R1`, `Score-XGB`), and explicit 5-axis serving
+/// strategies (`Retrieval × Pacing × Bidding × Scoring × Ranking`).
 pub struct AdServer {
     config: AdServerConfig,
     campaigns: Vec<CampaignState>,
@@ -509,7 +509,7 @@ impl AdServer {
         self.current_second_of_day
     }
 
-    /// Install or clear an `ads-ml` [`PreparedScorer`] for `Score-R1` ML CTR scoring.
+    /// Install or clear an `ads-ml` [`PreparedScorer`] for ML CTR scoring (`Score-R1`, `Score-XGB`).
     pub fn set_ml_scorer(&mut self, scorer: Option<PreparedScorer>) {
         self.ml_scorer = scorer;
     }
@@ -1106,7 +1106,7 @@ mod tests {
         assert_eq!(spec.default_slate_size, 20);
         assert_eq!(spec.supported_retrievers.len(), 1);
         assert_eq!(spec.supported_rankers.len(), 3);
-        assert_eq!(spec.supported_scorers.len(), 5);
+        assert_eq!(spec.supported_scorers.len(), 6);
         assert_eq!(spec.supported_pacers.len(), 4);
         assert_eq!(spec.supported_bidders.len(), 2);
         let json = serde_json::to_string(&spec).unwrap();

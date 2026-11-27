@@ -1,7 +1,8 @@
-//! Impression-click logging and logistic regression CTR modeling for ad ranking.
+//! Impression-click logging and ML CTR modeling (PyTorch LR & XGBoost GBDT) for ad ranking.
 
 mod model;
 mod records;
+mod xgboost;
 
 pub use model::{
     CtrModel, LogisticRegressionModel, PreparedScorer, PyTorchTrainer, SufficientStatsPayload,
@@ -11,3 +12,4 @@ pub use records::{
     AdCandidate, BorrowedImpressionClickRecord, DailyImpressionWriter, ImpressionClickRecord,
     ImpressionClickRef, ImpressionLogStore, RankingContext,
 };
+pub use xgboost::{XgboostCtrModel, XgboostTrainer, XgboostTrainingConfig};

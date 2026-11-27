@@ -357,8 +357,9 @@ pub fn build_catalog() -> SimulatorCatalog {
                 "ad-server/src/strategy.rs".into(),
                 "ml/src/lib.rs".into(),
                 "ml/src/model.rs".into(),
+                "ml/src/xgboost.rs".into(),
             ],
-            summary: "Explicit 5-axis ad-serving strategy pipeline combining Candidate Retrieval (Retrieve-V0), Budget Pacing (P0/P1/P2/pacing-1), Auction Bidding (bidding-basebid/bidding-autobid-v0), Candidate Scoring (S0–S3 + Score-R1 PyTorch LR), and Slate Ranking (R1/R2/R3) on every simulation run.".into(),
+            summary: "Explicit 5-axis ad-serving strategy pipeline combining Candidate Retrieval (Retrieve-V0), Budget Pacing (P0/P1/P2/pacing-1), Auction Bidding (bidding-basebid/bidding-autobid-v0), Candidate Scoring (S0–S3 + Score-R1 PyTorch LR + Score-XGB XGBoost GBDT), and Slate Ranking (R1/R2/R3) on every simulation run.".into(),
             parameters: vec![
                 param("default_retrieval", "Default Retrieval Strategy", srv.default_retrieval.as_str(), "strategy"),
                 param("default_ranker", "Default Ranking Strategy", srv.default_ranker.as_str(), "strategy"),
@@ -375,12 +376,12 @@ pub fn build_catalog() -> SimulatorCatalog {
             features: vec![
                 feat("Explicit 5-Axis Strategy Manifest", "Every run resolves and records concrete Retrieval, Ranking, Scoring, Pacing, and Bidding strategies across reports, analysis, SVGs, and dashboards."),
                 feat("Active-Budget Retrieval (Retrieve-V0, Top-20)", "ActiveBudgetRetriever sparse-set index uniformly samples up to 20 funded campaigns per request in O(20) with O(1) swap-remove retirement."),
-                feat("Pluggable Candidate Scoring (S0–S3 + Score-R1)", "Supports Uniform (S0), Online UCB1 CTR (S1), Empirical CTR (S2), Empirical eCPM (S3), and daily PyTorch L2 logistic regression CTR (Score-R1 via ads-ml)."),
+                feat("Pluggable Candidate Scoring (S0–S3 + Score-R1 + Score-XGB)", "Supports Uniform (S0), Online UCB1 CTR (S1), Empirical CTR (S2), Empirical eCPM (S3), daily PyTorch L2 logistic regression CTR (Score-R1), and daily XGBoost GBDT CTR (Score-XGB) via ads-ml."),
                 feat("Budget Pacing Engines (P0–P2 + pacing-1)", "Supports Unpaced ASAP (P0), Even Daily Cap (P1), Smooth Probabilistic (P2), and 24-hour PST linear intraday budget schedule (pacing-1)."),
                 feat("Auction Bidding & Slate Ranking (B0–B1 × R1–R3)", "Supports Base Bid (bidding-basebid) and eCPM Auto-Bid (bidding-autobid-v0) combined with Random (R1), Bandit ε-greedy (R2), and Greedy Top-K (R3)."),
             ],
             gaps_and_simplifications: vec![
-                "Retrieve-V0 uniformly samples up to 20 funded campaigns without ANN/inverted-index pre-filtering; Score-R1 requires Python PyTorch runtime for daily cold retraining.".into(),
+                "Retrieve-V0 uniformly samples up to 20 funded campaigns without ANN/inverted-index pre-filtering; Score-R1 and Score-XGB require Python PyTorch / XGBoost runtimes for daily cold retraining.".into(),
             ],
         },
         SimulatorPiece {
@@ -393,7 +394,7 @@ pub fn build_catalog() -> SimulatorCatalog {
                 "simulation/src/lib.rs".into(),
                 "simulation/src/main.rs".into(),
             ],
-            summary: "Orchestrates VisitSimulator (visit arrivals + ClickOracle) and AdServer across 30 days, drives optional daily Score-R1 ML training and JSONL logging, and assembles balanced Schema v1 reports.".into(),
+            summary: "Orchestrates VisitSimulator (visit arrivals + ClickOracle) and AdServer across 30 days, drives optional daily Score-R1 / Score-XGB ML training and JSONL logging, and assembles balanced Schema v1 reports.".into(),
             parameters: vec![
                 param("days", "Simulation Horizon", sim.days, "days"),
                 param("default_ranker", "Default Ranker", sim.default_ranker.as_str(), "strategy"),
@@ -405,7 +406,7 @@ pub fn build_catalog() -> SimulatorCatalog {
             features: vec![
                 feat("Isolated 3-Stream RNG Architecture", "Stream 0 (AdServer/Ranker), Stream 1 (VisitSimulator arrivals), and Stream 2 (VisitSimulator ClickOracle) remain strictly independent."),
                 feat("Click-Only CPC Ledger Aggregation", "Aggregates VisitSimulator delivery/click outcomes and AdServer campaign ledgers into balanced 30-day Schema v1 reports."),
-                feat("Daily Score-R1 ML Training & JSONL Logging", "Optionally persists daily impression-click logs and runs end-of-day PyTorch CTR training via ads-ml."),
+                feat("Daily ML CTR Training & JSONL Logging", "Optionally persists daily impression-click logs and runs end-of-day PyTorch (Score-R1) or XGBoost (Score-XGB) CTR training via ads-ml."),
                 feat("Dual Borrowed & Owned Report Types", "Exports zero-copy Report and serde-deserializable OwnedReport with ad_requests, ranker, and balanced multi-level ledgers."),
             ],
             gaps_and_simplifications: vec![

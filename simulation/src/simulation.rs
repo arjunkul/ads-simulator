@@ -3,8 +3,9 @@
 //! Orchestrates [`visit_simulator::VisitSimulator`] (user visit arrivals with optional PST diurnal
 //! timestamps for `pacing-1`, ad slot generation, and [`visit_simulator::ClickOracle`]),
 //! [`ad_server::AdServer`] (explicit 5-axis `Retrieval × Pacing × Bidding × Scoring × Ranking`
-//! strategy pipeline, including `Retrieve-V0`, `Pacing-1`, `bidding-autobid-v0`, and daily PyTorch
-//! `Score-R1` training via `ads-ml`), and balanced Schema v1 report aggregation.
+//! strategy pipeline, including `Retrieve-V0`, `Pacing-1`, `bidding-autobid-v0`, and daily
+//! `Score-R1` PyTorch LR / `Score-XGB` XGBoost GBDT training via `ads-ml`), and balanced Schema v1
+//! report aggregation.
 
 use std::{
     collections::HashMap,
@@ -25,8 +26,8 @@ use ad_server::{
     ScoringStrategy, StrategyProfile,
 };
 use ads_ml::{
-    AdCandidate, ImpressionClickRef, ImpressionLogStore, PyTorchTrainer, SufficientStatsPayload,
-    TrainingConfig,
+    AdCandidate, ImpressionClickRef, ImpressionLogStore, PreparedScorer, PyTorchTrainer,
+    SufficientStatsPayload, TrainingConfig, XgboostTrainer, XgboostTrainingConfig,
 };
 use ads_simulator::{Item, Marketplace};
 use serde::{Deserialize, Serialize};
@@ -406,13 +407,60 @@ fn map_campaigns<'a>(
         .collect()
 }
 
-/// Run the 30-day CPC simulation with default temporary ML log storage when `Score-R1` is active.
+enum DailyMlTrainer {
+    PyTorch(PyTorchTrainer),
+    Xgboost(XgboostTrainer),
+}
+
+impl DailyMlTrainer {
+    fn spawn_for(scoring: ScoringStrategy) -> Result<Option<Self>, Error> {
+        match scoring {
+            ScoringStrategy::ScoreR1 => Ok(Some(Self::PyTorch(PyTorchTrainer::spawn()?))),
+            ScoringStrategy::ScoreXgb => Ok(Some(Self::Xgboost(XgboostTrainer::spawn()?))),
+            _ => Ok(None),
+        }
+    }
+
+    fn train_and_prepare(
+        &mut self,
+        payload: &SufficientStatsPayload<'_>,
+        stats_file: &Path,
+        model_out: &Path,
+        user_refs: &[&str],
+        cat_refs: &[&str],
+        candidates: &[AdCandidate<'_>],
+    ) -> Result<PreparedScorer, Error> {
+        match self {
+            Self::PyTorch(pt) => {
+                let model = pt.train_from_sufficient_stats(
+                    payload,
+                    stats_file,
+                    model_out,
+                    TrainingConfig::default(),
+                )?;
+                Ok(model.prepare_scorer(user_refs, cat_refs, candidates))
+            }
+            Self::Xgboost(xgb) => {
+                let model = xgb.train_from_sufficient_stats(
+                    payload,
+                    stats_file,
+                    model_out,
+                    XgboostTrainingConfig::default(),
+                )?;
+                Ok(model.prepare_scorer(user_refs, cat_refs, candidates))
+            }
+        }
+    }
+}
+
+/// Run the 30-day CPC simulation with default temporary ML log storage when an `ads-ml` scoring
+/// model (`Score-R1` or `Score-XGB`) is active.
 pub fn run(marketplace: &Marketplace, config: Config) -> Result<Report<'_>, Error> {
     run_with_log_dir(marketplace, config, None)
 }
 
 /// Run the 30-day CPC simulation, optionally persisting daily `ads-ml` JSONL impression-click
-/// logs and trained PyTorch model checkpoints to `impression_log_dir`.
+/// logs and trained ML model artifacts (`Score-R1` or `Score-XGB`) to `impression_log_dir`.
 pub fn run_with_log_dir<'a>(
     marketplace: &'a Marketplace,
     config: Config,
@@ -450,7 +498,7 @@ pub fn run_with_log_dir<'a>(
     let budget_cents = ad_server.total_budget_cents();
     let strategy = ad_server.strategy_profile();
 
-    let use_ml_scoring = config.scoring == ScoringStrategy::ScoreR1;
+    let use_ml_scoring = config.scoring.is_ml_model();
     let write_daily_jsonl = impression_log_dir.is_some();
     let _temp_log_dir: Option<TempDir>;
     let log_store: Option<ImpressionLogStore> = if let Some(dir) = impression_log_dir {
@@ -468,14 +516,11 @@ pub fn run_with_log_dir<'a>(
         None
     };
 
-    let mut trainer = if use_ml_scoring {
-        Some(PyTorchTrainer::spawn()?)
-    } else {
-        None
-    };
+    let mut trainer = DailyMlTrainer::spawn_for(config.scoring)?;
 
     // Pre-index users and campaigns for O(1) exact sufficient-statistics aggregation when
-    // Score-R1 is active, avoiding O(D^2) Python JSONL re-parsing on 100M-impression runs.
+    // an offline-trained ads-ml scorer (Score-R1 or Score-XGB) is active, avoiding O(D^2)
+    // Python JSONL re-parsing on 100M-impression runs.
     let num_users = user_ids.len();
     let num_campaigns = ad_server.campaigns().len();
     let mut user_idx_map: HashMap<&str, usize> = HashMap::new();
@@ -606,7 +651,7 @@ pub fn run_with_log_dir<'a>(
         }
 
         if use_ml_scoring && day < DAYS {
-            if let (Some(store), Some(pt)) = (log_store.as_ref(), trainer.as_mut()) {
+            if let (Some(store), Some(ml_trainer)) = (log_store.as_ref(), trainer.as_mut()) {
                 let model_out = store.model_file_path(day);
                 let stats_file = store.root().join(format!("stats-day-{day:02}.json"));
                 let user_refs: Vec<&str> = user_ids.iter().map(String::as_str).collect();
@@ -629,12 +674,6 @@ pub fn run_with_log_dir<'a>(
                     campaign_vocab: &camp_vocab_refs,
                     groups: &groups,
                 };
-                let model = pt.train_from_sufficient_stats(
-                    &payload,
-                    &stats_file,
-                    &model_out,
-                    TrainingConfig::default(),
-                )?;
                 let mut cat_refs: Vec<&str> = Vec::with_capacity(ml_cat_vocab.len() + 1);
                 cat_refs.push("");
                 cat_refs.extend(ml_cat_vocab.iter().map(String::as_str));
@@ -649,7 +688,14 @@ pub fn run_with_log_dir<'a>(
                         ad_price_cents: c.item.price_cents,
                     })
                     .collect();
-                let scorer = model.prepare_scorer(&user_refs, &cat_refs, &candidates);
+                let scorer = ml_trainer.train_and_prepare(
+                    &payload,
+                    &stats_file,
+                    &model_out,
+                    &user_refs,
+                    &cat_refs,
+                    &candidates,
+                )?;
                 ad_server.set_ml_scorer(Some(scorer));
             }
         }
@@ -972,5 +1018,54 @@ mod tests {
         let decoded: OwnedReport = serde_json::from_str(&borrowed_json).unwrap();
         assert_eq!(decoded, owned);
         assert_eq!(report.into_owned_report(), owned);
+    }
+
+    #[test]
+    fn score_xgb_runs_end_to_end_exports_models_and_balances_ledgers() {
+        use super::run_with_log_dir;
+        use tempfile::TempDir;
+
+        let marketplace = generate_marketplace(42);
+        let log_dir = TempDir::new().unwrap();
+        let config = Config {
+            seed: 42,
+            campaign_budget_cents: Some(30_000),
+            cpc_cents: 100,
+            impressions: Some(15_000),
+            retrieval: RetrievalStrategy::RetrieveV0,
+            ranker: RankerStrategy::R3,
+            scoring: ScoringStrategy::ScoreXgb,
+            pacing: PacingStrategy::P0,
+            bidding: BiddingStrategy::Basebid,
+            slate_size: 10,
+            ..Config::default()
+        };
+        let report_a = run_with_log_dir(&marketplace, config, Some(log_dir.path())).unwrap();
+        let report_b = run(&marketplace, config).unwrap();
+
+        assert_eq!(report_a, report_b);
+        assert_eq!(report_a.strategy.scoring, ScoringStrategy::ScoreXgb);
+        assert_eq!(report_a.summary.activity.impressions, 15_000);
+        assert!(report_a.summary.activity.clicks > 0);
+        assert_eq!(
+            report_a.summary.remaining_budget_cents + report_a.summary.activity.spend_cents,
+            report_a.summary.budget_cents
+        );
+
+        let model_day_1: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(log_dir.path().join("model-day-01.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(model_day_1["trainer"], "xgboost");
+        let model_day_29: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(log_dir.path().join("model-day-29.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(model_day_29["trainer"], "xgboost");
+        assert!(
+            model_day_29["trees"]
+                .as_array()
+                .is_some_and(|trees| !trees.is_empty())
+        );
     }
 }

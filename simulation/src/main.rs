@@ -46,7 +46,7 @@ struct Args {
     /// Ads-ranker strategy (`R1`/`Rank-Uniform`, `R2`, `R3`/`Rank-Greedy`).
     #[arg(long, alias = "ranking-strategy", default_value_t = DEFAULT_RANKER)]
     ranker: RankerStrategy,
-    /// Candidate scoring strategy (`S0`/`Score-Uniform`, `S1`, `S2`, `S3`, `Score-R1`; defaults from --ranker).
+    /// Candidate scoring strategy (`S0`/`Score-Uniform`, `S1`, `S2`, `S3`, `Score-R1`, `Score-XGB`; defaults from --ranker).
     #[arg(long, alias = "scoring-strategy")]
     scoring: Option<ScoringStrategy>,
     /// Budget pacing strategy (`P0`/`none`, `P1`, `P2`, `pacing-1`).

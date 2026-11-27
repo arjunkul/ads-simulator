@@ -42,6 +42,17 @@ pub enum ScoringStrategy {
     /// Score-R1 (`S4`): Daily cold-trained PyTorch L2 logistic regression CTR model (`ads-ml`).
     #[serde(rename = "Score-R1", alias = "score-r1", alias = "S4", alias = "s4")]
     ScoreR1,
+    /// Score-XGB (`S5`): Daily cold-trained XGBoost GBDT CTR model (`ads-ml`).
+    #[serde(
+        rename = "Score-XGB",
+        alias = "score-xgb",
+        alias = "S5",
+        alias = "s5",
+        alias = "xgboost",
+        alias = "xgb",
+        alias = "gbdt"
+    )]
+    ScoreXgb,
 }
 
 impl ScoringStrategy {
@@ -53,10 +64,17 @@ impl ScoringStrategy {
             ScoringStrategy::S2,
             ScoringStrategy::S3,
             ScoringStrategy::ScoreR1,
+            ScoringStrategy::ScoreXgb,
         ]
     }
 
-    /// Canonical short identifier (e.g. `"S0"`, `"S1"`, `"S2"`, `"S3"`, `"Score-R1"`).
+    /// Returns `true` for offline-trained `ads-ml` CTR models (`Score-R1`, `Score-XGB`)
+    /// evaluated via [`ads_ml::PreparedScorer`].
+    pub const fn is_ml_model(self) -> bool {
+        matches!(self, ScoringStrategy::ScoreR1 | ScoringStrategy::ScoreXgb)
+    }
+
+    /// Canonical short identifier (e.g. `"S0"`, `"S1"`, `"S2"`, `"S3"`, `"Score-R1"`, `"Score-XGB"`).
     pub const fn as_str(self) -> &'static str {
         match self {
             ScoringStrategy::S0 => "S0",
@@ -64,6 +82,7 @@ impl ScoringStrategy {
             ScoringStrategy::S2 => "S2",
             ScoringStrategy::S3 => "S3",
             ScoringStrategy::ScoreR1 => "Score-R1",
+            ScoringStrategy::ScoreXgb => "Score-XGB",
         }
     }
 
@@ -75,6 +94,7 @@ impl ScoringStrategy {
             ScoringStrategy::S2 => "Empirical CTR",
             ScoringStrategy::S3 => "Empirical eCPM",
             ScoringStrategy::ScoreR1 => "PyTorch Logistic Regression CTR (ads-ml)",
+            ScoringStrategy::ScoreXgb => "XGBoost GBDT CTR (ads-ml)",
         }
     }
 
@@ -96,6 +116,9 @@ impl ScoringStrategy {
             ScoringStrategy::ScoreR1 => {
                 "Daily cold-trained PyTorch L2 logistic regression pCTR model over user/category/campaign features (ads-ml)"
             }
+            ScoringStrategy::ScoreXgb => {
+                "Daily cold-trained XGBoost gradient-boosted decision tree pCTR model over leave-one-out Bayesian CTR & entity features (ads-ml)"
+            }
         }
     }
 
@@ -107,6 +130,7 @@ impl ScoringStrategy {
             ScoringStrategy::S2 => "score(i) = clicks_i / imp_i",
             ScoringStrategy::S3 => "score(i) = (clicks_i / imp_i) * cpc_cents",
             ScoringStrategy::ScoreR1 => "pCTR(u, i) = sigmoid(w_0 + w_u + w_cat + w_adv + w_camp + w_{u,cat}) via PyTorch LBFGS",
+            ScoringStrategy::ScoreXgb => "pCTR(u, i) = sigmoid(base_margin + sum_t tree_t(x(u, i))) via XGBoost GBDT",
         }
     }
 
@@ -125,7 +149,7 @@ impl ScoringStrategy {
             ScoringStrategy::S1 => emp_ctr + ucb_exploration_c * (ln_total_impressions / imp).sqrt(),
             ScoringStrategy::S2 => emp_ctr,
             ScoringStrategy::S3 => emp_ctr * (cpc_cents as f64),
-            ScoringStrategy::ScoreR1 => emp_ctr,
+            ScoringStrategy::ScoreR1 | ScoringStrategy::ScoreXgb => emp_ctr,
         }
     }
 }
@@ -146,8 +170,11 @@ impl FromStr for ScoringStrategy {
             "S2" | "EMP_CTR" | "EMPIRICAL_CTR" | "CTR" => Ok(ScoringStrategy::S2),
             "S3" | "ECPM" | "EMP_ECPM" => Ok(ScoringStrategy::S3),
             "SCORE-R1" | "SCORE_R1" | "S4" | "PYTORCH" | "LR" => Ok(ScoringStrategy::ScoreR1),
+            "SCORE-XGB" | "SCORE_XGB" | "S5" | "XGBOOST" | "XGB" | "GBDT" => {
+                Ok(ScoringStrategy::ScoreXgb)
+            }
             other => Err(format!(
-                "unknown scoring strategy '{other}' (supported: S0/Score-Uniform, S1/ucb1_ctr, S2/emp_ctr, S3/ecpm, Score-R1/S4)"
+                "unknown scoring strategy '{other}' (supported: S0/Score-Uniform, S1/ucb1_ctr, S2/emp_ctr, S3/ecpm, Score-R1/S4, Score-XGB/S5)"
             )),
         }
     }
@@ -584,12 +611,21 @@ mod tests {
             ("ecpm", ScoringStrategy::S3),
             ("Score-R1", ScoringStrategy::ScoreR1),
             ("S4", ScoringStrategy::ScoreR1),
+            ("Score-XGB", ScoringStrategy::ScoreXgb),
+            ("S5", ScoringStrategy::ScoreXgb),
+            ("xgboost", ScoringStrategy::ScoreXgb),
+            ("xgb", ScoringStrategy::ScoreXgb),
+            ("gbdt", ScoringStrategy::ScoreXgb),
         ] {
             assert_eq!(ScoringStrategy::from_str(raw).unwrap(), expected);
             let json = serde_json::to_string(&expected).unwrap();
             let parsed: ScoringStrategy = serde_json::from_str(&json).unwrap();
             assert_eq!(parsed, expected);
         }
+        assert!(ScoringStrategy::ScoreR1.is_ml_model());
+        assert!(ScoringStrategy::ScoreXgb.is_ml_model());
+        assert!(!ScoringStrategy::S0.is_ml_model());
+        assert!(!ScoringStrategy::S1.is_ml_model());
         assert!(ScoringStrategy::from_str("S99").is_err());
 
         for (raw, expected) in [
@@ -631,8 +667,24 @@ mod tests {
         .is_err());
         assert!(validate_strategy(
             RetrievalStrategy::RetrieveV0,
+            RankerStrategy::R1,
+            ScoringStrategy::ScoreXgb,
+            PacingStrategy::P0,
+            BiddingStrategy::Basebid
+        )
+        .is_err());
+        assert!(validate_strategy(
+            RetrievalStrategy::RetrieveV0,
             RankerStrategy::R3,
             ScoringStrategy::ScoreR1,
+            PacingStrategy::Pacing1,
+            BiddingStrategy::AutobidV0
+        )
+        .is_ok());
+        assert!(validate_strategy(
+            RetrievalStrategy::RetrieveV0,
+            RankerStrategy::R3,
+            ScoringStrategy::ScoreXgb,
             PacingStrategy::Pacing1,
             BiddingStrategy::AutobidV0
         )

@@ -676,11 +676,13 @@ impl LogisticRegressionModel {
         };
 
         PreparedScorer {
-            same_category_weight: self.same_category_weight,
-            user_base,
-            campaign_base,
-            campaign_category,
-            user_category_weights,
+            inner: PreparedScorerInner::Linear(LinearPreparedScorer {
+                same_category_weight: self.same_category_weight,
+                user_base,
+                campaign_base,
+                campaign_category,
+                user_category_weights,
+            }),
         }
     }
 }
@@ -702,9 +704,8 @@ enum UserCategoryTable {
     },
 }
 
-/// Pre-indexed scorer for fast repeated candidate scoring over fixed user/category/campaign tables.
 #[derive(Clone, Debug)]
-pub struct PreparedScorer {
+struct LinearPreparedScorer {
     same_category_weight: f64,
     user_base: Vec<f64>,
     campaign_base: Vec<f64>,
@@ -712,10 +713,9 @@ pub struct PreparedScorer {
     user_category_weights: UserCategoryTable,
 }
 
-impl PreparedScorer {
-    /// Score the log-odds (monotone in predicted CTR) for `(user_idx, organic_cat_idx, campaign_idx)`.
+impl LinearPreparedScorer {
     #[inline]
-    pub fn score_logit(&self, user_idx: usize, organic_cat_idx: usize, campaign_idx: usize) -> f64 {
+    fn score_logit(&self, user_idx: usize, organic_cat_idx: usize, campaign_idx: usize) -> f64 {
         let mut logit = self.user_base[user_idx] + self.campaign_base[campaign_idx];
         if let Some(ad_cat_idx) = self.campaign_category[campaign_idx] {
             if ad_cat_idx == organic_cat_idx {
@@ -724,12 +724,6 @@ impl PreparedScorer {
             logit += self.user_category_weight(user_idx, ad_cat_idx);
         }
         logit
-    }
-
-    /// Score the predicted CTR in `(0, 1)` for `(user_idx, organic_cat_idx, campaign_idx)`.
-    #[inline]
-    pub fn score_ctr(&self, user_idx: usize, organic_cat_idx: usize, campaign_idx: usize) -> f64 {
-        sigmoid(self.score_logit(user_idx, organic_cat_idx, campaign_idx))
     }
 
     #[inline]
@@ -747,6 +741,48 @@ impl PreparedScorer {
     }
 }
 
+#[derive(Clone, Debug)]
+enum PreparedScorerInner {
+    Linear(LinearPreparedScorer),
+    Xgboost(crate::xgboost::XgboostPreparedScorer),
+}
+
+/// Pre-indexed scorer for fast repeated candidate scoring over fixed user/category/campaign tables.
+///
+/// Supports both PyTorch logistic regression (`Score-R1`) and XGBoost GBDT (`Score-XGB`) models
+/// behind a single zero-allocation scoring interface.
+#[derive(Clone, Debug)]
+pub struct PreparedScorer {
+    inner: PreparedScorerInner,
+}
+
+impl PreparedScorer {
+    pub(crate) fn from_xgboost(scorer: crate::xgboost::XgboostPreparedScorer) -> Self {
+        Self {
+            inner: PreparedScorerInner::Xgboost(scorer),
+        }
+    }
+
+    /// Score the log-odds (monotone in predicted CTR) for `(user_idx, organic_cat_idx, campaign_idx)`.
+    #[inline]
+    pub fn score_logit(&self, user_idx: usize, organic_cat_idx: usize, campaign_idx: usize) -> f64 {
+        match &self.inner {
+            PreparedScorerInner::Linear(linear) => {
+                linear.score_logit(user_idx, organic_cat_idx, campaign_idx)
+            }
+            PreparedScorerInner::Xgboost(xgb) => {
+                xgb.score_logit(user_idx, organic_cat_idx, campaign_idx)
+            }
+        }
+    }
+
+    /// Score the predicted CTR in `(0, 1)` for `(user_idx, organic_cat_idx, campaign_idx)`.
+    #[inline]
+    pub fn score_ctr(&self, user_idx: usize, organic_cat_idx: usize, campaign_idx: usize) -> f64 {
+        sigmoid(self.score_logit(user_idx, organic_cat_idx, campaign_idx))
+    }
+}
+
 fn index_weight_map(map: HashMap<String, f64>) -> (HashMap<String, u32>, Vec<f64>) {
     let mut ids = HashMap::with_capacity(map.len());
     let mut weights = Vec::with_capacity(map.len());
@@ -759,7 +795,7 @@ fn index_weight_map(map: HashMap<String, f64>) -> (HashMap<String, u32>, Vec<f64
 }
 
 #[inline]
-fn sigmoid(z: f64) -> f64 {
+pub(crate) fn sigmoid(z: f64) -> f64 {
     if z >= 0.0 {
         1.0 / (1.0 + (-z).exp())
     } else {

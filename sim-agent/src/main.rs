@@ -67,7 +67,7 @@ struct Args {
     #[arg(long, alias = "ranking-strategy", default_value_t = DEFAULT_RANKER)]
     ranker: RankerStrategy,
 
-    /// Candidate scoring strategy (S0/Score-Uniform, S1=ucb1_ctr, S2=emp_ctr, S3=ecpm, Score-R1; defaults from --ranker).
+    /// Candidate scoring strategy (S0/Score-Uniform, S1=ucb1_ctr, S2=emp_ctr, S3=ecpm, Score-R1, Score-XGB; defaults from --ranker).
     #[arg(long, alias = "scoring-strategy")]
     scoring: Option<ScoringStrategy>,
 

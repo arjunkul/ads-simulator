@@ -1,0 +1,4 @@
+# Install XGBoost and NumPy with:
+#   pip install -r ml/xgboost/requirements.txt
+xgboost>=2.1
+numpy>=1.26

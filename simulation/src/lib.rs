@@ -3,7 +3,7 @@
 //! Orchestrates [`visit_simulator::VisitSimulator`] (visit arrivals, ad slot generation, and
 //! [`visit_simulator::ClickOracle`]), [`ad_server::AdServer`] (campaign budget pool + explicit
 //! 5-axis `Retrieval × Pacing × Bidding × Scoring × Ranking` strategy pipeline), and `ads-ml`
-//! PyTorch daily CTR training (`Score-R1`).
+//! daily CTR training (`Score-R1` PyTorch LR, `Score-XGB` XGBoost GBDT).
 
 pub mod simulation;
 
