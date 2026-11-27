@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Ads-Simulator — System Strategy Dashboard (100M Impressions · 3 Profiles)</title>
+  <title>Ads-Simulator — System Strategy Dashboard (100M Impressions · 4 Profiles)</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -23,6 +23,7 @@
       --r1: #94a3b8;
       --r2: #fbbf24;
       --r3: #34d399;
+      --r4: #38bdf8;
     }
     @media (prefers-color-scheme: light) {
       :root {
@@ -43,6 +44,7 @@
         --r1: #64748b;
         --r2: #d97706;
         --r3: #059669;
+        --r4: #0284c7;
       }
     }
     * { box-sizing: border-box; }
@@ -127,7 +129,7 @@
     <header>
       <div>
         <h1>Ads-Simulator · System Strategy Dashboard</h1>
-        <p class="subtitle">Explicit 5-axis <code>ad-server</code> + <code>ads-ml</code> strategy contract (<strong>Retrieval × Pacing × Bidding × Scoring × Ranking</strong>) — 30-day 100M-impression 3-profile benchmark (500 campaigns · 50 advertisers · 1,000 shoppers · $1 CPC · Seed 42)</p>
+        <p class="subtitle">Explicit 5-axis <code>ad-server</code> + <code>ads-ml</code> + <code>world-generator</code> strategy contract (<strong>Retrieval × Pacing × Bidding × Scoring × Ranking × World Model</strong>) — 30-day 100M-impression 4-profile benchmark (500 campaigns · 50 advertisers · 1,000 shoppers · $1 CPC · Seed 42)</p>
       </div>
       <span class="run-pill mono">100,000,000 Impr · $10k–$100k/camp · $27.99M Pool</span>
     </header>
@@ -136,14 +138,15 @@
 
     <section class="card" style="padding: 0; overflow: hidden;">
       <div style="padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-        <strong>100M-Impression Benchmark Runs (3 Profiles · Explicit Retrieval · Ranking · Scoring · Pacing · Bidding)</strong>
-        <span style="font-size: 0.8rem; color: var(--muted);">Click any run row to inspect exact 5-axis pipeline formula, delivery spread &amp; top campaigns</span>
+        <strong>100M-Impression Benchmark Runs (4 Profiles · Explicit Retrieval · Ranking · Scoring · Pacing · Bidding · World Model)</strong>
+        <span style="font-size: 0.8rem; color: var(--muted);">Click any run row to inspect exact 5-axis pipeline formula, world model, delivery spread &amp; top campaigns</span>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
               <th>Run Profile</th>
+              <th>World Model</th>
               <th>Retrieval</th>
               <th>Ranking</th>
               <th>Scoring</th>
@@ -151,7 +154,7 @@
               <th>Bidding</th>
               <th>Slate</th>
               <th>Overall CTR</th>
-              <th>vs R1</th>
+              <th>vs P1</th>
               <th>30d Spend / Clicks</th>
               <th>eCPM</th>
               <th>Spend Gini</th>
@@ -167,12 +170,13 @@
     <section class="card">
       <div class="chart-header">
         <div>
-          <strong>30-Day Daily Trajectory (100M Impressions · 3 Profiles)</strong>
-          <div style="font-size:0.8rem;color:var(--muted);">Profile 3 (Score-R1 PyTorch LR + pacing-1 + autobid-v0) jumps from 0.1981% (Day 1 cold-start) to 3.7888% late-month CTR (94.7% of 4.00% oracle ceiling), winning 29/30 days</div>
+          <strong>30-Day Daily Trajectory (100M Impressions · 4 Profiles)</strong>
+          <div style="font-size:0.8rem;color:var(--muted);">P3 (Score-R1 · WM-v0) reaches 3.7888% late-month CTR winning Days 2–30; P4 (Score-R1 · WM-v1 + Top-20 Retrieve-V0) wins Day 1 (0.4369%) and averages 0.4411% CTR ($441k spend) under noisy hierarchical clicks</div>
         </div>
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
           <div class="legend">
-            <span class="legend-item"><span class="swatch" style="background:var(--r3);"></span>P3 · R3 / Score-R1 / pacing-1 / autobid-v0</span>
+            <span class="legend-item"><span class="swatch" style="background:var(--r3);"></span>P3 · R3 / Score-R1 / pacing-1 / autobid-v0 (WM-v0)</span>
+            <span class="legend-item"><span class="swatch" style="background:var(--r4);"></span>P4 · R3 / Score-R1 / pacing-1 / autobid-v0 (WM-v1)</span>
             <span class="legend-item"><span class="swatch" style="background:var(--r2);"></span>P2 · R2 / S1 / P0</span>
             <span class="legend-item"><span class="swatch" style="background:var(--r1);"></span>P1 · R1 / S0 / P0</span>
           </div>
@@ -181,35 +185,39 @@
             <button class="btn" data-metric="spend">Daily Spend ($)</button>
           </div>
           <div class="controls" role="group" aria-label="Chart view">
-            <button class="btn active" data-scope="all">All 3 Profiles</button>
-            <button class="btn" data-scope="baseline">Zoom P1 vs P2</button>
+            <button class="btn active" data-scope="all">All 4 Profiles</button>
+            <button class="btn" data-scope="baseline">Zoom P1 / P2 / P4</button>
           </div>
         </div>
       </div>
       <div id="chart-container" style="width:100%;"></div>
-      <div class="chart-readout mono" id="chart-readout">Hover over any day column to inspect exact values across all 3 run profiles</div>
+      <div class="chart-readout mono" id="chart-readout">Hover over any day column to inspect exact values across all 4 run profiles</div>
     </section>
 
     <section class="card" id="detail-panel"></section>
 
     <section class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
-        <strong>Compiled 5-Axis Strategy Registry (<code>ad-server</code> + <code>ads-ml</code>)</strong>
-        <span style="font-size:0.8rem;color:var(--muted);">Every simulation run selects and specifies all 5 axes via <code>--retrieval</code>, <code>--ranker</code>, <code>--scoring</code>, <code>--pacing</code>, and <code>--bidding</code></span>
+        <strong>Compiled 5-Axis Strategy &amp; World-Model Registry (<code>ad-server</code> + <code>ads-ml</code> + <code>world-generator</code>)</strong>
+        <span style="font-size:0.8rem;color:var(--muted);">Every simulation run selects all 5 axes plus click-oracle world model via <code>--retrieval</code>, <code>--ranker</code>, <code>--scoring</code>, <code>--pacing</code>, <code>--bidding</code>, and <code>--world-model</code></span>
       </div>
       <div class="registry-grid" id="registry-grid"></div>
     </section>
 
     <footer>
-      <span>Source: <code>ad-server/src/{retrieval,bidding,timestamp,ranker,strategy}.rs</code> · <code>ml/src/model.rs</code> · <code>simulation-analyzer/src/lib.rs</code></span>
-      <span class="mono">5,000,010 requests · 20.00 ads/req · 0/500 exhausted across all 3 runs</span>
+      <span>Source: <code>ad-server/src/{retrieval,bidding,ranker,strategy}.rs</code> · <code>world-generator/src/{user_activity_oracle,visit_generator,timestamp}.rs</code> · <code>ml/src/{model,xgboost}.rs</code></span>
+      <span class="mono">~5,000,010–5,000,073 requests · 20.00 ads/req · 0/500 exhausted across all 4 runs</span>
     </footer>
   </div>
 
   <script>
     const REGISTRY = {
+      worldModel: [
+        { id: "world-model-v0", name: "World Model v0 (Binary Category Oracle)", formula: "P(click | u, ad) = 0.04 if cat(ad) ∈ prefs(u) else 0.0", notes: "Clean binary category-match Bernoulli click oracle (default; alias: v0)." },
+        { id: "world-model-v1", name: "World Model v1 (Noisy Hierarchical Oracle)", formula: "P(click | u, ad) = sigmoid(logit(base) + δ_grp + δ_cat + δ_adv + δ_combo + ε_t)", notes: "Hierarchical static CTR shifts + per-impression logit noise across group, category, advertiser, and (advertiser, category) combo + 0.2% non-preferred background CTR (alias: v1)." }
+      ],
       retrieval: [
-        { id: "Retrieve-V0", name: "Active Budget Pool (O(1) Sparse Set)", formula: "candidates(req) = { c : remaining_c >= cpc_c }", notes: "All funded campaigns via ActiveBudgetRetriever with O(1) swap-remove retirement (alias: RT0)." }
+        { id: "Retrieve-V0", name: "Active Budget Pool (Top-20 Sparse Set)", formula: "sample_without_replacement({ c : remaining_c >= cpc_c }, k = 20)", notes: "O(1) sparse-set active-budget index uniformly sampling up to 20 funded campaigns per request (alias: RT0)." }
       ],
       ranking: [
         { id: "R1", name: "Random Budgeted Selector", formula: "Uniform sample without replacement of min(K, |eligible|) + Fisher-Yates shuffle", notes: "Unbiased baseline; requires Scoring S0 (alias: Rank-Uniform)." },
@@ -221,7 +229,8 @@
         { id: "S1", name: "Online UCB1 CTR", formula: "score(i) = (clicks_i / imp_i) + 0.02 * sqrt(ln(T) / imp_i)", notes: "Low-CTR-calibrated upper confidence bound." },
         { id: "S2", name: "Empirical CTR", formula: "score(i) = clicks_i / imp_i", notes: "Pure observed CTR with cold-start priority." },
         { id: "S3", name: "Empirical eCPM", formula: "score(i) = (clicks_i / imp_i) * cpc_cents", notes: "Expected revenue per impression." },
-        { id: "Score-R1", name: "PyTorch L2 LR CTR (ads-ml)", formula: "pCTR(u, c) = sigmoid(w0 + w_u + w_cat + w_adv + w_camp + w_{u,cat})", notes: "Daily cold-trained L-BFGS logistic regression over exact sufficient stats (alias: S4)." }
+        { id: "Score-R1", name: "PyTorch L2 LR CTR (ads-ml)", formula: "pCTR(u, c) = sigmoid(w0 + w_u + w_cat + w_adv + w_camp + w_{u,cat})", notes: "Daily cold-trained L-BFGS logistic regression over exact sufficient stats (alias: S4)." },
+        { id: "Score-XGB", name: "XGBoost GBDT CTR (ads-ml)", formula: "pCTR(u, c) = sigmoid(sum_t f_t(target-encoded u, cat, adv, camp, u×cat))", notes: "Daily cold-trained XGBoost binary:logistic GBDT with Bayesian target encoding (alias: S5)." }
       ],
       pacing: [
         { id: "P0", name: "Unpaced (ASAP Hard Cap)", formula: "eligible(i, d) <=> remaining_i >= cpc", notes: "No daily throttle; spends until campaign budget exhausts (alias: none)." },
@@ -239,6 +248,7 @@
       metrics: {
         "P1 · R1/S0/P0": {
           id: "P1 · R1/S0/P0",
+          worldModel: "world-model-v0", worldModelName: "Binary Category Oracle",
           retrieval: "Retrieve-V0", retrievalName: "Active Budget Pool",
           ranking: "R1", rankingName: "Random Budgeted Selector",
           scoring: "S0", scoringName: "Uniform (Unscored)",
@@ -250,8 +260,8 @@
           impRange: "198,915 – 201,271 (median 199,991, σ 415)",
           maxUtil: "4.30% (advertiser-07-campaign-06)",
           daysWon: "0 / 30", runtime: "55s",
-          cli: "sim-agent --retrieval Retrieve-V0 --ranker R1 --scoring S0 --pacing P0 --bidding bidding-basebid --campaign-budget-min-cents 1000000 --campaign-budget-max-cents 10000000 --impressions 100000000",
-          notes: "Unbiased uniform baseline. Every campaign receives ~200,000 impressions (σ = 415), converging tightly to the 0.201% population-average CTR with minimal spend dispersion (Gini 0.094).",
+          cli: "sim-agent --retrieval Retrieve-V0 --ranker R1 --scoring S0 --pacing P0 --bidding bidding-basebid --world-model world-model-v0 --campaign-budget-min-cents 1000000 --campaign-budget-max-cents 10000000 --impressions 100000000",
+          notes: "Unbiased uniform baseline under world-model-v0. Every campaign receives ~200,000 impressions (σ = 415), converging tightly to the 0.201% population-average CTR with minimal spend dispersion (Gini 0.094).",
           dailyCtr: [0.2046,0.1965,0.2007,0.2004,0.2006,0.1987,0.2005,0.1973,0.1998,0.2004,0.2011,0.2043,0.2002,0.2020,0.2005,0.2021,0.1999,0.1981,0.2016,0.2025,0.1999,0.2054,0.2032,0.2070,0.2023,0.1997,0.1993,0.1998,0.2011,0.2019],
           dailySpend: [6820,6549,6691,6681,6687,6624,6684,6577,6659,6679,6704,6810,6672,6733,6682,6737,6663,6602,6721,6750,6662,6847,6772,6901,6742,6655,6642,6659,6702,6730],
           topCamps: [
@@ -262,6 +272,7 @@
         },
         "P2 · R2/S1/P0": {
           id: "P2 · R2/S1/P0",
+          worldModel: "world-model-v0", worldModelName: "Binary Category Oracle",
           retrieval: "Retrieve-V0", retrievalName: "Active Budget Pool",
           ranking: "R2", rankingName: "Bandit Top-K + ε-Greedy",
           scoring: "S1", scoringName: "Online UCB1 CTR",
@@ -272,9 +283,9 @@
           gini: "0.837", top10: "82.7%", util: "0.88%", exhausted: "0 / 500", zeroClick: 0,
           impRange: "20,651 – 4,837,518 (median 36,321, σ 697,698)",
           maxUtil: "66.76% (advertiser-40-campaign-06, $9,532 / $14,278)",
-          daysWon: "1 / 30", runtime: "200s",
-          cli: "sim-agent --retrieval Retrieve-V0 --ranker R2 --scoring S1 --pacing P0 --bidding bidding-basebid --campaign-budget-min-cents 1000000 --campaign-budget-max-cents 10000000 --impressions 100000000",
-          notes: "User-blind UCB1 bandit with 10% ε-greedy exploration. Wins Day 1 (0.2202%) via online intra-day learning, then saturates the ~0.252% user-blind ceiling (Days 16–30 avg: 0.2514%) while heavily concentrating spend (Gini 0.837, top-10% share 82.7%).",
+          daysWon: "0 / 30", runtime: "200s",
+          cli: "sim-agent --retrieval Retrieve-V0 --ranker R2 --scoring S1 --pacing P0 --bidding bidding-basebid --world-model world-model-v0 --campaign-budget-min-cents 1000000 --campaign-budget-max-cents 10000000 --impressions 100000000",
+          notes: "User-blind UCB1 bandit with 10% ε-greedy exploration under world-model-v0. Beats P1/P3 on Day 1 (0.2202%) via online intra-day learning, then saturates the ~0.252% user-blind ceiling (Days 16–30 avg: 0.2514%) while heavily concentrating spend (Gini 0.837, top-10% share 82.7%).",
           dailyCtr: [0.2202,0.2296,0.2337,0.2416,0.2388,0.2359,0.2463,0.2437,0.2474,0.2462,0.2483,0.2479,0.2441,0.2482,0.2496,0.2500,0.2506,0.2516,0.2509,0.2482,0.2480,0.2530,0.2480,0.2544,0.2529,0.2512,0.2494,0.2527,0.2533,0.2528],
           dailySpend: [7340,7655,7791,8054,7959,7862,8209,8123,8247,8207,8278,8262,8136,8273,8319,8333,8352,8388,8364,8272,8268,8433,8267,8481,8430,8373,8313,8422,8443,8425],
           topCamps: [
@@ -285,7 +296,8 @@
         },
         "P3 · R3/Score-R1/pacing-1/autobid": {
           id: "P3 · R3/Score-R1/pacing-1/autobid",
-          retrieval: "Retrieve-V0", retrievalName: "Active Budget Pool",
+          worldModel: "world-model-v0", worldModelName: "Binary Category Oracle",
+          retrieval: "Retrieve-V0", retrievalName: "Active Budget Pool (Full)",
           ranking: "R3", rankingName: "Greedy Top-K",
           scoring: "Score-R1", scoringName: "PyTorch L2 LR CTR",
           pacing: "pacing-1", pacingName: "24h PST Intraday Linear",
@@ -296,8 +308,8 @@
           impRange: "60,096 – 359,670 (median 197,496, σ 45,130)",
           maxUtil: "77.26% (advertiser-23-campaign-06, $8,817 / $11,412)",
           daysWon: "29 / 30", runtime: "33m 39s",
-          cli: "sim-agent --retrieval Retrieve-V0 --ranker R3 --scoring Score-R1 --pacing pacing-1 --bidding bidding-autobid-v0 --campaign-budget-min-cents 1000000 --campaign-budget-max-cents 10000000 --impressions 100000000",
-          notes: "Personalized PyTorch L2 logistic regression (Score-R1) cold-trained daily on exact sufficient stats + 24h PST linear intraday pacing + eCPM autobidding. Cold-starts at 0.1981% on Day 1, leaps to 3.2662% on Day 2, and reaches 3.7888% across Days 16–30 (peaking at 3.8255% on Day 29 = 95.6% of the 4.00% oracle ceiling), while keeping Spend Gini at just 0.128 across all 500 campaigns.",
+          cli: "sim-agent --retrieval Retrieve-V0 --ranker R3 --scoring Score-R1 --pacing pacing-1 --bidding bidding-autobid-v0 --world-model world-model-v0 --campaign-budget-min-cents 1000000 --campaign-budget-max-cents 10000000 --impressions 100000000",
+          notes: "Personalized PyTorch L2 logistic regression (Score-R1) cold-trained daily on exact sufficient stats + 24h PST linear intraday pacing + eCPM autobidding under world-model-v0 (full-pool retrieval). Cold-starts at 0.1981% on Day 1, leaps to 3.2662% on Day 2, and reaches 3.7888% across Days 16–30 (peaking at 3.8255% on Day 29 = 95.6% of the 4.00% oracle ceiling), while keeping Spend Gini at just 0.128 across all 500 campaigns.",
           dailyCtr: [0.1981,3.2662,3.4226,3.4899,3.4904,3.5485,3.5793,3.5954,3.6150,3.6445,3.6693,3.6874,3.7101,3.7536,3.7336,3.7341,3.7645,3.7656,3.7614,3.7804,3.7784,3.8028,3.7845,3.8094,3.7889,3.8030,3.8000,3.8157,3.8255,3.8177],
           dailySpend: [6604,108874,114088,116329,116348,118283,119310,119848,120501,121484,122309,122912,123669,125121,124454,124471,125484,125519,125379,126013,125948,126760,126149,126981,126297,126768,126667,127190,127516,127256],
           topCamps: [
@@ -305,12 +317,41 @@
             { id: "advertiser-37-campaign-06", cat: "cat-064", stat: "288,870 impr · 11,125 clicks (3.851%)" },
             { id: "advertiser-07-campaign-08", cat: "cat-064", stat: "285,815 impr · 11,029 clicks (3.859%)" }
           ]
+        },
+        "P4 · R3/Score-R1/pacing-1/autobid · WM-v1": {
+          id: "P4 · R3/Score-R1/pacing-1/autobid · WM-v1",
+          worldModel: "world-model-v1", worldModelName: "Noisy Hierarchical Oracle",
+          retrieval: "Retrieve-V0", retrievalName: "Active Budget Pool (Top-20)",
+          ranking: "R3", rankingName: "Greedy Top-K",
+          scoring: "Score-R1", scoringName: "PyTorch L2 LR CTR",
+          pacing: "pacing-1", pacingName: "24h PST Intraday Linear",
+          bidding: "bidding-autobid-v0", biddingName: "eCPM Auto-Bid V0",
+          slate: 20,
+          ctr: 0.4411, spend: "$441,071.00", clicks: "441,071", ecpm: "$4.41",
+          gini: "0.289", top10: "22.1%", util: "1.58%", exhausted: "0 / 500", zeroClick: 0,
+          impRange: "198,599 – 201,112 (median 199,990, σ 456)",
+          maxUtil: "14.82% (advertiser-09-campaign-10, $4,328 / $29,194)",
+          daysWon: "1 / 30", runtime: "28m 33s",
+          cli: "sim-agent --retrieval Retrieve-V0 --ranker R3 --scoring Score-R1 --pacing pacing-1 --bidding bidding-autobid-v0 --world-model world-model-v1 --campaign-budget-min-cents 1000000 --campaign-budget-max-cents 10000000 --impressions 100000000",
+          notes: "Same serving stack as P3 evaluated under world-model-v1 (hierarchical group/category/advertiser/combo logit shifts, per-impression stochastic noise, and 0.2% non-preferred background CTR) with Retrieve-V0 capped at 20 uniformly sampled campaigns/request. Wins Day 1 (0.4369%) via non-zero background CTR and averages 0.4411% overall CTR (2.19× P1, peak 0.4517% on Day 18, $441k spend). Because Retrieve-V0's 20-candidate cap equals slate_size=20 (σ = 456 impr/campaign), Score-R1/R3 only reorders the 20 retrieved ads rather than filtering out low-pCTR inventory; Spend Gini (0.289) reflects true hierarchical CTR spread across campaigns (top campaign advertiser-09-campaign-10 hits 2.156% CTR).",
+          dailyCtr: [0.4369,0.4370,0.4316,0.4426,0.4499,0.4389,0.4368,0.4399,0.4387,0.4468,0.4447,0.4430,0.4400,0.4388,0.4372,0.4374,0.4435,0.4517,0.4427,0.4446,0.4452,0.4415,0.4402,0.4374,0.4342,0.4370,0.4510,0.4419,0.4407,0.4405],
+          dailySpend: [14563,14567,14387,14753,14997,14631,14560,14664,14623,14892,14823,14765,14668,14625,14572,14579,14783,15056,14757,14821,14839,14718,14674,14581,14472,14565,15032,14731,14689,14684],
+          topCamps: [
+            { id: "advertiser-09-campaign-10", cat: "cat-085", stat: "200,725 impr · 4,328 clicks (2.156%)" },
+            { id: "advertiser-44-campaign-02", cat: "cat-036", stat: "199,893 impr · 3,699 clicks (1.850%)" },
+            { id: "advertiser-05-campaign-08", cat: "cat-047", stat: "200,298 impr · 2,526 clicks (1.261%)" }
+          ]
         }
       }
     };
 
-    const RUN_ORDER = ["P1 · R1/S0/P0", "P2 · R2/S1/P0", "P3 · R3/Score-R1/pacing-1/autobid"];
-    let selectedRun = "P3 · R3/Score-R1/pacing-1/autobid";
+    const RUN_ORDER = [
+      "P1 · R1/S0/P0",
+      "P2 · R2/S1/P0",
+      "P3 · R3/Score-R1/pacing-1/autobid",
+      "P4 · R3/Score-R1/pacing-1/autobid · WM-v1"
+    ];
+    let selectedRun = "P4 · R3/Score-R1/pacing-1/autobid · WM-v1";
     let chartMetric = "ctr";
     let chartScope = "all";
 
@@ -318,28 +359,30 @@
       const r1 = BENCHMARK.metrics["P1 · R1/S0/P0"];
       const r2 = BENCHMARK.metrics["P2 · R2/S1/P0"];
       const r3 = BENCHMARK.metrics["P3 · R3/Score-R1/pacing-1/autobid"];
+      const r4 = BENCHMARK.metrics["P4 · R3/Score-R1/pacing-1/autobid · WM-v1"];
       const r3Mult = r3.ctr / r1.ctr;
+      const r4Mult = r4.ctr / r1.ctr;
 
       document.getElementById("kpi-strip").innerHTML = `
         <div class="card">
-          <div class="kpi-label">Registered 5-Axis Stack</div>
-          <div class="kpi-value">1 × 3 × 5 × 4 × 2</div>
-          <div class="kpi-sub">1 Retrieval · 3 Ranking · 5 Scoring · 4 Pacing · 2 Bidding</div>
+          <div class="kpi-label">Registered Strategy Stack</div>
+          <div class="kpi-value">1 × 3 × 6 × 4 × 2 · 2 WM</div>
+          <div class="kpi-sub">1 Retr · 3 Rank · 6 Score · 4 Pace · 2 Bid · 2 World Models</div>
         </div>
         <div class="card">
-          <div class="kpi-label">Best Overall CTR (100M)</div>
+          <div class="kpi-label">Best Overall CTR (WM-v0)</div>
           <div class="kpi-value" style="color: var(--success);">${r3.ctr.toFixed(4)}%</div>
           <div class="kpi-sub">P3 Score-R1 (${r3Mult.toFixed(2)}× vs P1 · 3.79% Days 16–30)</div>
         </div>
         <div class="card">
-          <div class="kpi-label">30-Day Revenue Lift</div>
-          <div class="kpi-value">+$3,373,495</div>
-          <div class="kpi-sub">P3 $3.57M vs P2 $246k vs P1 $201k (12.77% util.)</div>
+          <div class="kpi-label">P4 · World Model v1 CTR</div>
+          <div class="kpi-value" style="color: var(--r4);">${r4.ctr.toFixed(4)}%</div>
+          <div class="kpi-sub">${r4.spend} (${r4Mult.toFixed(2)}× vs P1 · Top-20 Retrieve-V0 cap)</div>
         </div>
         <div class="card">
           <div class="kpi-label">Spend Fairness (Gini)</div>
-          <div class="kpi-value">${r2.gini} &rarr; ${r3.gini}</div>
-          <div class="kpi-sub">Personalized targeting + pacing-1 restores low Gini (P1: ${r1.gini})</div>
+          <div class="kpi-value">${r3.gini} (P3) · ${r4.gini} (P4)</div>
+          <div class="kpi-sub">vs P2 ${r2.gini} &amp; P1 ${r1.gini} (WM-v1 heterogeneity raises P4 Gini)</div>
         </div>
       `;
 
@@ -350,10 +393,12 @@
         const lift = id === "P1 · R1/S0/P0"
           ? `<span class="badge badge-warning">Baseline</span>`
           : `<span class="badge badge-success">${(m.ctr / r1.ctr).toFixed(2)}× (+${(((m.ctr / r1.ctr) - 1) * 100).toFixed(1)}%)</span>`;
+        const wmBadge = m.worldModel === "world-model-v1" ? "badge-primary" : "badge-purple";
         const tr = document.createElement("tr");
         tr.className = "clickable" + (id === selectedRun ? " selected" : "");
         tr.innerHTML = `
           <td><strong class="mono">${m.id}</strong><div style="font-size:0.75rem;color:var(--muted);">Runtime ${m.runtime}</div></td>
+          <td><span class="badge ${wmBadge} mono">${m.worldModel}</span><div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">${m.worldModelName}</div></td>
           <td><span class="badge badge-primary mono">${m.retrieval}</span><div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">${m.retrievalName}</div></td>
           <td><span class="badge badge-success mono">${m.ranking}</span><div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">${m.rankingName}</div></td>
           <td><span class="badge badge-purple mono">${m.scoring}</span><div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">${m.scoringName}</div></td>
@@ -376,6 +421,7 @@
       document.getElementById("detail-panel").innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span class="badge ${sel.worldModel === "world-model-v1" ? "badge-primary" : "badge-purple"} mono">${sel.worldModel}</span>
             <span class="badge badge-primary mono">${sel.retrieval}</span>
             <span class="badge badge-success mono">Ranking ${sel.ranking}</span>
             <span class="badge badge-purple mono">Scoring ${sel.scoring}</span>
@@ -387,8 +433,9 @@
         <p style="margin:10px 0 0;color:var(--muted);font-size:0.89rem;">${sel.notes}</p>
         <div class="detail-grid">
           <div class="detail-box">
-            <h3>Active 5-Axis Strategy Stack</h3>
-            <div><strong>Retrieval (${sel.retrieval}):</strong> ${REGISTRY.retrieval.find((x) => x.id === sel.retrieval).formula}</div>
+            <h3>Active Strategy Stack &amp; World Model</h3>
+            <div><strong>World Model (${sel.worldModel}):</strong> ${REGISTRY.worldModel.find((x) => x.id === sel.worldModel).formula}</div>
+            <div style="margin-top:4px;"><strong>Retrieval (${sel.retrieval}):</strong> ${REGISTRY.retrieval.find((x) => x.id === sel.retrieval).formula}</div>
             <div style="margin-top:4px;"><strong>Ranking (${sel.ranking}):</strong> ${REGISTRY.ranking.find((x) => x.id === sel.ranking).formula}</div>
             <div style="margin-top:4px;"><strong>Scoring (${sel.scoring}):</strong> ${REGISTRY.scoring.find((x) => x.id === sel.scoring).formula}</div>
             <div style="margin-top:4px;"><strong>Pacing (${sel.pacing}):</strong> ${REGISTRY.pacing.find((x) => x.id === sel.pacing).formula}</div>
@@ -410,6 +457,7 @@
       `;
 
       document.getElementById("registry-grid").innerHTML = [
+        { title: "World Models (--world-model)", badge: "badge-primary", items: REGISTRY.worldModel },
         { title: "Retrieval Strategies (--retrieval)", badge: "badge-primary", items: REGISTRY.retrieval },
         { title: "Ranking Strategies (--ranker)", badge: "badge-success", items: REGISTRY.ranking },
         { title: "Scoring Strategies (--scoring)", badge: "badge-purple", items: REGISTRY.scoring },
@@ -438,38 +486,41 @@
       const r1Arr = chartMetric === "ctr" ? BENCHMARK.metrics["P1 · R1/S0/P0"].dailyCtr : BENCHMARK.metrics["P1 · R1/S0/P0"].dailySpend;
       const r2Arr = chartMetric === "ctr" ? BENCHMARK.metrics["P2 · R2/S1/P0"].dailyCtr : BENCHMARK.metrics["P2 · R2/S1/P0"].dailySpend;
       const r3Arr = chartMetric === "ctr" ? BENCHMARK.metrics["P3 · R3/Score-R1/pacing-1/autobid"].dailyCtr : BENCHMARK.metrics["P3 · R3/Score-R1/pacing-1/autobid"].dailySpend;
+      const r4Arr = chartMetric === "ctr" ? BENCHMARK.metrics["P4 · R3/Score-R1/pacing-1/autobid · WM-v1"].dailyCtr : BENCHMARK.metrics["P4 · R3/Score-R1/pacing-1/autobid · WM-v1"].dailySpend;
 
       const w = 980, h = 250, padL = 64, padR = 20, padT = 16, padB = 30;
       const isAll = chartScope === "all";
-      const minV = isAll ? 0 : (chartMetric === "ctr" ? 0.19 : 6300);
-      const maxV = isAll ? (chartMetric === "ctr" ? 4.0 : 135000) : (chartMetric === "ctr" ? 0.26 : 8700);
+      const minV = isAll ? 0 : (chartMetric === "ctr" ? 0.18 : 6000);
+      const maxV = isAll ? (chartMetric === "ctr" ? 4.0 : 135000) : (chartMetric === "ctr" ? 0.48 : 16000);
       const x = (i) => padL + (i / 29) * (w - padL - padR);
       const y = (v) => padT + (1 - (v - minV) / (maxV - minV)) * (h - padT - padB);
       const pathOf = (arr) => arr.map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
       const ticks = isAll
         ? (chartMetric === "ctr" ? [0.0, 1.0, 2.0, 3.0, 4.0] : [0, 35000, 70000, 105000, 135000])
-        : (chartMetric === "ctr" ? [0.19, 0.20, 0.22, 0.24, 0.26] : [6500, 7000, 7500, 8000, 8500]);
+        : (chartMetric === "ctr" ? [0.18, 0.24, 0.30, 0.36, 0.42, 0.48] : [6000, 8000, 10000, 12000, 14000, 16000]);
       const fmtTick = (t) => chartMetric === "ctr" ? `${t.toFixed(2)}%` : `$${(t / 1000).toFixed(t >= 10000 ? 0 : 1)}k`;
 
       const container = document.getElementById("chart-container");
       container.innerHTML = `
-        <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block;" role="img" aria-label="30-day 3-profile trajectory">
+        <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block;" role="img" aria-label="30-day 4-profile trajectory">
           ${ticks.map((t) => `
             <line x1="${padL}" x2="${w - padR}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" stroke="var(--border)" stroke-dasharray="3 3" opacity="0.7" />
             <text x="${padL - 8}" y="${(y(t) + 4).toFixed(1)}" text-anchor="end" fill="var(--muted)" font-size="11" font-family="ui-monospace,monospace">${fmtTick(t)}</text>
           `).join("")}
           ${isAll && chartMetric === "ctr" ? `
             <line x1="${padL}" x2="${w - padR}" y1="${y(4.0).toFixed(1)}" y2="${y(4.0).toFixed(1)}" stroke="var(--success)" stroke-dasharray="5 4" opacity="0.45" />
-            <text x="${w - padR - 4}" y="${(y(4.0) + 13).toFixed(1)}" text-anchor="end" fill="var(--success)" font-size="10" font-family="ui-monospace,monospace">4.00% Oracle Ceiling</text>
+            <text x="${w - padR - 4}" y="${(y(4.0) + 13).toFixed(1)}" text-anchor="end" fill="var(--success)" font-size="10" font-family="ui-monospace,monospace">4.00% WM-v0 Oracle Ceiling</text>
           ` : ""}
           ${[1, 5, 10, 15, 20, 25, 30].map((d) => `
             <text x="${x(d - 1).toFixed(1)}" y="${h - 8}" text-anchor="middle" fill="var(--muted)" font-size="11" font-family="ui-monospace,monospace">Day ${d}</text>
           `).join("")}
           <path d="${pathOf(r1Arr)}" fill="none" stroke="var(--r1)" stroke-width="2" />
           <path d="${pathOf(r2Arr)}" fill="none" stroke="var(--r2)" stroke-width="2.2" />
+          <path d="${pathOf(r4Arr)}" fill="none" stroke="var(--r4)" stroke-width="2.4" />
           ${isAll ? `<path d="${pathOf(r3Arr)}" fill="none" stroke="var(--r3)" stroke-width="2.8" />` : ""}
           ${r1Arr.map((_, i) => `
             ${isAll ? `<circle cx="${x(i).toFixed(1)}" cy="${y(r3Arr[i]).toFixed(1)}" r="3.2" fill="var(--r3)" />` : ""}
+            <circle cx="${x(i).toFixed(1)}" cy="${y(r4Arr[i]).toFixed(1)}" r="2.8" fill="var(--r4)" />
             <circle cx="${x(i).toFixed(1)}" cy="${y(r2Arr[i]).toFixed(1)}" r="2.6" fill="var(--r2)" />
             <circle cx="${x(i).toFixed(1)}" cy="${y(r1Arr[i]).toFixed(1)}" r="2.2" fill="var(--r1)" />
             <rect x="${(x(i) - 14).toFixed(1)}" y="${padT}" width="28" height="${h - padT - padB}" fill="transparent" style="cursor:crosshair;" data-day-idx="${i}" />
@@ -480,11 +531,11 @@
       container.querySelectorAll("[data-day-idx]").forEach((rect) => {
         rect.addEventListener("mouseenter", () => {
           const i = Number(rect.dataset.dayIdx);
-          const v1 = r1Arr[i], v2 = r2Arr[i], v3 = r3Arr[i];
+          const v1 = r1Arr[i], v2 = r2Arr[i], v3 = r3Arr[i], v4 = r4Arr[i];
           if (chartMetric === "ctr") {
-            readout.innerHTML = `<span>Day ${i + 1}: P3 <strong style="color:var(--r3);">${v3.toFixed(4)}%</strong> · P2 <strong style="color:var(--r2);">${v2.toFixed(4)}%</strong> · P1 <strong>${v1.toFixed(4)}%</strong></span><span style="color:var(--success);">P3 is ${(v3 / v1).toFixed(2)}× P1 &amp; ${(v3 / v2).toFixed(2)}× P2</span>`;
+            readout.innerHTML = `<span>Day ${i + 1}: P3 <strong style="color:var(--r3);">${v3.toFixed(4)}%</strong> · P4 <strong style="color:var(--r4);">${v4.toFixed(4)}%</strong> · P2 <strong style="color:var(--r2);">${v2.toFixed(4)}%</strong> · P1 <strong>${v1.toFixed(4)}%</strong></span><span style="color:var(--r4);">P4 is ${(v4 / v1).toFixed(2)}× P1 · P3 is ${(v3 / v1).toFixed(2)}× P1</span>`;
           } else {
-            readout.innerHTML = `<span>Day ${i + 1}: P3 <strong style="color:var(--r3);">$${v3.toLocaleString()}</strong> · P2 <strong style="color:var(--r2);">$${v2.toLocaleString()}</strong> · P1 <strong>$${v1.toLocaleString()}</strong></span><span style="color:var(--success);">+$${(v3 - v1).toLocaleString()} vs P1</span>`;
+            readout.innerHTML = `<span>Day ${i + 1}: P3 <strong style="color:var(--r3);">$${v3.toLocaleString()}</strong> · P4 <strong style="color:var(--r4);">$${v4.toLocaleString()}</strong> · P2 <strong style="color:var(--r2);">$${v2.toLocaleString()}</strong> · P1 <strong>$${v1.toLocaleString()}</strong></span><span style="color:var(--r4);">P4 +$${(v4 - v1).toLocaleString()} vs P1</span>`;
           }
         });
       });
