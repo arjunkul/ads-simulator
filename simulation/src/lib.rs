@@ -25,9 +25,9 @@ pub use simulation::{
     SimulationSpec, Summary, run, run_with_log_dir, simulation_spec,
 };
 pub use world_generator::{
-    CLICK_RNG_STREAM, ComboNoiseProfile, DEFAULT_DAILY_REQUESTS, DayGenerationStats,
-    GeneratedImpression, INTEREST_COUNT, PREFERENCE_RNG_STREAM, UserActivityOracle,
-    UserActivityOracleSpec, UserPreferenceProfile, V1_NON_PREFERRED_BASE_CTR,
+    CLICK_RNG_STREAM, ComboNoiseProfile, DEFAULT_DAILY_REQUESTS, DEFAULT_SLOTS_PER_VISIT,
+    DayGenerationStats, GeneratedImpression, INTEREST_COUNT, PREFERENCE_RNG_STREAM,
+    UserActivityOracle, UserActivityOracleSpec, UserPreferenceProfile, V1_NON_PREFERRED_BASE_CTR,
     VISIT_DEFAULT_SEED, VisitGenerator, VisitGeneratorConfig, VisitGeneratorSpec,
     WORLD_MODEL_RNG_STREAM, WorldModel, WorldModelInfo, WorldModelV1Params,
     generate_user_preferences, score_preference, user_activity_oracle_spec, visit_generator_spec,

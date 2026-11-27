@@ -1155,7 +1155,7 @@ mod tests {
         assert_eq!(spec.default_scoring, crate::ScoringStrategy::S0);
         assert_eq!(spec.default_pacing, crate::PacingStrategy::P0);
         assert_eq!(spec.default_bidding, crate::BiddingStrategy::Basebid);
-        assert_eq!(spec.default_slate_size, 20);
+        assert_eq!(spec.default_slate_size, 1);
         assert_eq!(spec.supported_retrievers.len(), 1);
         assert_eq!(spec.supported_rankers.len(), 3);
         assert_eq!(spec.supported_scorers.len(), 6);
@@ -1172,6 +1172,8 @@ mod tests {
         let user_ids: Vec<String> = mp.users.iter().map(|u| u.id.clone()).collect();
         let category_ids: Vec<String> = mp.categories.iter().map(|c| c.id.clone()).collect();
 
+        // Even when AdServer is configured with slate_size = 20, VisitGenerator defaults to
+        // 1 slot per visitor so the world only accepts the top 1 ad per request.
         let mut ad_server = AdServer::from_marketplace(
             &mp,
             AdServerConfig {
@@ -1203,14 +1205,15 @@ mod tests {
         let day1 = generator
             .run_day(1, &mut ad_server, |imp| {
                 assert!(!imp.clicked);
+                assert_eq!(imp.slot_position, 1);
                 if imp.request_id == 1 {
                     assert!(seen_req1.insert(imp.ad.campaign_id.clone()));
                 }
             })
             .unwrap();
         assert_eq!(day1.impressions, 34);
-        assert_eq!(day1.ad_requests, 2);
-        assert_eq!(seen_req1.len(), 20);
+        assert_eq!(day1.ad_requests, 34);
+        assert_eq!(seen_req1.len(), 1);
 
         // Unaffordable budget cannot meet a target.
         let mut broke_server = AdServer::from_marketplace(
@@ -1220,7 +1223,7 @@ mod tests {
                 campaign_budget_cents: Some(50),
                 cpc_cents: 100,
                 ranker: RankerStrategy::R1,
-                slate_size: 20,
+                slate_size: 1,
                 ..AdServerConfig::default()
             },
         )

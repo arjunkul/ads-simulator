@@ -55,7 +55,7 @@ struct Args {
     #[arg(long, conflicts_with = "no_impression_target")]
     impressions: Option<u64>,
 
-    /// Disable the impression target and run 600 user-independent ad-server requests/day across 30 days.
+    /// Disable the impression target and run 12,000 user-independent ad-server requests/day across 30 days (1 slot/visitor).
     #[arg(long, default_value_t = false)]
     no_impression_target: bool,
 

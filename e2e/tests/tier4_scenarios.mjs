@@ -77,9 +77,9 @@ export const tests = [
       validateBudgetSvg(svgText, ts);
 
       assert.strictEqual(ts.summary.total_budget_cents, 279898700);
-      assert.strictEqual(ts.summary.total_clicks, 1968);
-      assert.strictEqual(ts.summary.total_spend_cents, 196800);
-      assert.strictEqual(ts.summary.remaining_budget_cents, 279701900);
+      assert.strictEqual(ts.summary.total_clicks, 1976);
+      assert.strictEqual(ts.summary.total_spend_cents, 197600);
+      assert.strictEqual(ts.summary.remaining_budget_cents, 279701100);
 
       const server = await startDashboardServer([
         "--sim-report", path.join(baseDir, "budget_timeseries.json"),
@@ -94,13 +94,13 @@ export const tests = [
             12_000,
           );
           const bodyText = await session.eval("document.body.innerText");
-          const spendCandidates = formatUsdCandidates(196800);
+          const spendCandidates = formatUsdCandidates(197600);
           assert.ok(
             spendCandidates.some((c) => bodyText.includes(c)),
             `Rendered dashboard must display baseline spend (${spendCandidates.join(" | ")})`,
           );
           const norm = bodyText.replace(/(\d),(\d)/g, "$1$2");
-          assert.ok(norm.includes("1968"), "Rendered dashboard must display 1,968 clicks");
+          assert.ok(norm.includes("1976"), "Rendered dashboard must display 1,976 clicks");
           assert.ok(norm.includes("1000000"), "Rendered dashboard must display 1,000,000 impressions");
           assert.deepStrictEqual(session.consoleErrors, []);
           assert.deepStrictEqual(session.pageErrors, []);
@@ -533,7 +533,7 @@ export const tests = [
       assert.deepStrictEqual(
         natTs.days,
         t360Ts.days,
-        "User-independent natural mode (600 req/day x 20 ads = 360k) and exact-target 360k mode should share identical daily spend patterns",
+        "User-independent natural mode (12,000 req/day x 1 slot = 360k) and exact-target 360k mode should share identical daily spend patterns",
       );
       assert.notDeepStrictEqual(
         natTs.days,

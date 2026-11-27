@@ -101,7 +101,7 @@ pub struct AgentConfig {
     /// Cost per click in USD cents (default: `100`, must be `> 0`).
     pub cpc_cents: u64,
     /// Target delivered impressions across 30 days (`Some(1_000_000)` by default;
-    /// `None` runs natural 600 requests/day user-independent mode).
+    /// `None` runs natural 12,000 requests/day user-independent mode (1 slot/visitor)).
     pub impressions: Option<u64>,
     /// Candidate retrieval strategy used by the ad-server (default: `Retrieve-V0`).
     #[serde(default)]
@@ -1244,7 +1244,7 @@ mod tests {
         assert_eq!(ts.summary.total_clicks, 0);
         assert_eq!(ts.summary.ctr_pct, 0.0);
         assert_eq!(ts.summary.exhausted_campaigns, 500);
-        assert_eq!(ts.summary.insufficient_budget_opportunities, 18_000);
+        assert_eq!(ts.summary.insufficient_budget_opportunities, 360_000);
         for day in &ts.days {
             assert_eq!(day.active_campaigns_end_of_day, 0);
             assert_eq!(day.daily_spend_cents, 0);

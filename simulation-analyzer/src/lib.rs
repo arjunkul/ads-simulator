@@ -954,7 +954,7 @@ mod tests {
 
         let analysis = analyze_borrowed_report(&report).unwrap();
         assert_eq!(analysis.ranker, RankerStrategy::R1);
-        assert_eq!(analysis.slate_size, 20);
+        assert_eq!(analysis.slate_size, 1);
         assert_eq!(analysis.days_analyzed, 30);
         assert_eq!(analysis.budget_depletion.daily_depletion.len(), 30);
         assert_eq!(
@@ -963,7 +963,8 @@ mod tests {
         );
         assert!(analysis.ctr_performance.overall_ctr_pct > 0.10);
         assert!(analysis.ctr_performance.overall_ctr_pct < 0.40);
-        assert!(analysis.ctr_performance.avg_ads_per_request > 19.0);
+        assert!(analysis.ctr_performance.avg_ads_per_request > 0.99);
+        assert!(analysis.ctr_performance.avg_ads_per_request <= 1.0);
         assert!(analysis.campaign_distribution.gini_spend_coefficient >= 0.0);
         assert!(analysis.campaign_distribution.gini_spend_coefficient <= 1.0);
         assert_eq!(analysis.top_categories_by_spend.len(), 10);

@@ -123,9 +123,9 @@ export const tests = [
 
       assert.deepStrictEqual(agentSim, directSim, "sim-agent simulation.json must match ads-marketplace-simulation CLI exactly");
       assert.strictEqual(directSim.summary.impressions, 1000000);
-      assert.strictEqual(directSim.summary.clicks, 1984);
-      assert.strictEqual(directSim.summary.spend_cents, 198400);
-      assert.strictEqual(directSim.summary.remaining_budget_cents, 4801600);
+      assert.strictEqual(directSim.summary.clicks, 2028);
+      assert.strictEqual(directSim.summary.spend_cents, 202800);
+      assert.strictEqual(directSim.summary.remaining_budget_cents, 4797200);
 
       let running = 0;
       for (let i = 0; i < 30; i++) {
@@ -135,7 +135,7 @@ export const tests = [
         assert.strictEqual(ts.days[i].impressions, directSim.days[i].impressions);
         assert.strictEqual(ts.days[i].cumulative_spend_cents, running);
       }
-      assert.strictEqual(running, 198400);
+      assert.strictEqual(running, 202800);
     },
   }),
 

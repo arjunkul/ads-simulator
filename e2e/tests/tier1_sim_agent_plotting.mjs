@@ -62,19 +62,19 @@ export const tests = [
         total_campaigns: 500,
       });
       assert.strictEqual(ts.summary.total_budget_cents, 279898700);
-      assert.strictEqual(ts.summary.total_clicks, 1968);
-      assert.strictEqual(ts.summary.total_spend_cents, 196800);
-      assert.strictEqual(ts.summary.remaining_budget_cents, 279701900);
+      assert.strictEqual(ts.summary.total_clicks, 1976);
+      assert.strictEqual(ts.summary.total_spend_cents, 197600);
+      assert.strictEqual(ts.summary.remaining_budget_cents, 279701100);
       assert.strictEqual(ts.summary.exhausted_campaigns, 0);
-      assert.strictEqual(ts.days[0].daily_spend_cents, 6500);
-      assert.strictEqual(ts.days[7].daily_spend_cents, 6100);
-      assert.strictEqual(ts.summary.min_daily_spend_cents, 4900);
+      assert.strictEqual(ts.days[0].daily_spend_cents, 6200);
+      assert.strictEqual(ts.days[7].daily_spend_cents, 6900);
+      assert.strictEqual(ts.summary.min_daily_spend_cents, 4500);
       const distinctBudgets = new Set(simReport.campaigns.map((c) => c.budget_cents));
       assert.ok(distinctBudgets.size > 100, "Default run must randomize campaign budgets across [$1,000, $10,000]");
       assert.ok(fs.existsSync(path.join(outDir, "analysis.json")), "sim-agent must export analysis.json");
       const analysis = readJsonFile(path.join(outDir, "analysis.json"));
-      assert.strictEqual(analysis.budget_depletion.total_spend_cents, 196800);
-      assert.strictEqual(analysis.ctr_performance.total_clicks, 1968);
+      assert.strictEqual(analysis.budget_depletion.total_spend_cents, 197600);
+      assert.strictEqual(analysis.ctr_performance.total_clicks, 1976);
 
       validateSimulationAndTimeSeriesParity(simReport, ts);
       validateBudgetCsv(csvText, ts);
@@ -98,8 +98,8 @@ export const tests = [
 
       validateBudgetTimeSeries(ts, { sim_seed: 42, impressions: null, total_campaigns: 500 });
       assert.strictEqual(ts.summary.total_impressions, 360000);
-      assert.strictEqual(ts.summary.total_clicks, 719);
-      assert.strictEqual(ts.summary.total_spend_cents, 71900);
+      assert.strictEqual(ts.summary.total_clicks, 710);
+      assert.strictEqual(ts.summary.total_spend_cents, 71000);
       for (const d of ts.days) {
         assert.strictEqual(d.impressions, 12000, `Day ${d.day} must have 12000 natural impressions`);
       }
@@ -271,8 +271,8 @@ export const tests = [
       assert.deepStrictEqual(cliAnalysis, agentAnalysis, "simulation-analyzer CLI output must match sim-agent analysis.json");
 
       assert.strictEqual(cliAnalysis.ranker, "R1");
-      assert.strictEqual(cliAnalysis.slate_size, 20);
-      assert.strictEqual(cliAnalysis.budget_depletion.total_spend_cents, 196800);
+      assert.strictEqual(cliAnalysis.slate_size, 1);
+      assert.strictEqual(cliAnalysis.budget_depletion.total_spend_cents, 197600);
       assert.strictEqual(cliAnalysis.budget_depletion.daily_depletion.length, 30);
       assert.ok(cliAnalysis.ctr_performance.overall_ctr_pct > 0.15 && cliAnalysis.ctr_performance.overall_ctr_pct < 0.30);
       assert.ok(cliAnalysis.ctr_performance.effective_cpm_cents > 150 && cliAnalysis.ctr_performance.effective_cpm_cents < 300);

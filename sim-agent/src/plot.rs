@@ -955,7 +955,7 @@ mod tests {
         assert!(svg.contains("30-Day Ads Simulation — Budget Spent"));
         assert!(svg.contains("Mkt Seed 42"));
         assert!(svg.contains("Retrieve-V0"));
-        assert!(svg.contains("Ranker R1 / Scoring S0 / Pacing P0 / bidding-basebid (Slate 20)"));
+        assert!(svg.contains("Ranker R1 / Scoring S0 / Pacing P0 / bidding-basebid (Slate 1)"));
         assert!(svg.contains("$1,000.00–$10,000.00/Campaign"));
 
         // Verify KPI values match the computed timeseries.

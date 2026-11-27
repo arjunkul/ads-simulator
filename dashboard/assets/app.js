@@ -105,7 +105,7 @@
     versionBadge.textContent = "v" + catalog.simulator_version;
     schemaBadge.textContent = "Schema v" + catalog.schema_version + " · " + catalog.currency;
     if (rankerBadge && ts && ts.config) {
-      rankerBadge.textContent = `${ts.config.retrieval || "Retrieve-V0"} · Ranker ${ts.config.ranker || "R1"} · Scoring ${ts.config.scoring || "S0"} · Pacing ${ts.config.pacing || "P0"} · ${ts.config.bidding || "bidding-basebid"} · ${ts.config.slate_size || 20} Ads/Req`;
+      rankerBadge.textContent = `${ts.config.retrieval || "Retrieve-V0"} · Ranker ${ts.config.ranker || "R1"} · Scoring ${ts.config.scoring || "S0"} · Pacing ${ts.config.pacing || "P0"} · ${ts.config.bidding || "bidding-basebid"} · ${ts.config.slate_size || 1} Ad/Req`;
     }
     modeBadge.textContent = state.staticMode ? "Static Offline Bundle" : "Live Rust Server";
 
@@ -123,7 +123,7 @@
       { label: "Categories", value: fmtInt(sc.categories), sub: "10 groups x 10 categories" },
       { label: "Advertisers", value: fmtInt(sc.advertisers), sub: "20 catalog items each" },
       { label: "Shoppers", value: fmtInt(sc.users), sub: "12,000 browse events" },
-      { label: "Ad-Server & R1", value: fmtInt(sc.campaigns) + " campaigns", sub: fmtInt(sc.simulation_days) + " days · " + fmtInt(sc.r1_slate_size || 20) + " ads/req · 4.0% max CTR" },
+      { label: "Ad-Server & R1", value: fmtInt(sc.campaigns) + " campaigns", sub: fmtInt(sc.simulation_days) + " days · " + fmtInt(sc.r1_slate_size || 1) + " ad/req · 4.0% max CTR" },
       { label: "30-Day Budget Spent", value: spendText, sub: utilText },
       { label: "Delivered Volume", value: clicksText, sub: imprText },
     ];
@@ -279,9 +279,9 @@
         pieceId: null,
         kind: "artifact",
         crate: "ad-server",
-        title: "AdResponse (up to 20 ServedAds)",
-        sub: "Distinct campaign_ids · verified budget",
-        desc: "Set of up to 20 ads from different funded campaigns returned by AdServer::serve_ads(user_id).",
+        title: "AdResponse (1 ServedAd default)",
+        sub: "Single-slot visitor · verified budget",
+        desc: "Served ad returned by AdServer::serve_ads(user_id); VisitGenerator produces 1 slot per visitor and accepts at most 1 ad.",
         x: 294, y: 486, w: 280, h: 54, color: "#a78bfa",
         flows: ["ad-serving", "cpc-loop"],
       },
@@ -1201,13 +1201,13 @@
 
     const meta = document.getElementById("sim-run-meta");
     const modeLabel = ts.config.impressions === null || ts.config.impressions === undefined
-      ? "Natural user-independent requests (600 req/day)"
+      ? "Natural user-independent requests (12,000 req/day)"
       : `Target ${fmtInt(ts.config.impressions)} impressions`;
     const budgetLabel = ts.config.campaign_budget_cents === null || ts.config.campaign_budget_cents === undefined
       ? `${fmtUsdCents(ts.config.campaign_budget_min_cents ?? 100000)}–${fmtUsdCents(ts.config.campaign_budget_max_cents ?? 1000000)}/campaign (random)`
       : `${fmtUsdCents(ts.config.campaign_budget_cents)}/campaign`;
     meta.textContent =
-      `Seed ${ts.config.sim_seed} · ${ts.config.retrieval || "Retrieve-V0"} · Ranker ${ts.config.ranker || "R1"} · Scoring ${ts.config.scoring || "S0"} · Pacing ${ts.config.pacing || "P0"} · ${ts.config.bidding || "bidding-basebid"} (Slate ${ts.config.slate_size || 20}) · ` +
+      `Seed ${ts.config.sim_seed} · ${ts.config.retrieval || "Retrieve-V0"} · Ranker ${ts.config.ranker || "R1"} · Scoring ${ts.config.scoring || "S0"} · Pacing ${ts.config.pacing || "P0"} · ${ts.config.bidding || "bidding-basebid"} (Slate ${ts.config.slate_size || 1}) · ` +
       `Budget ${budgetLabel} · CPC ${fmtUsdCents(ts.config.cpc_cents)} · ${modeLabel}`;
 
     const kpis = document.getElementById("budget-kpis");

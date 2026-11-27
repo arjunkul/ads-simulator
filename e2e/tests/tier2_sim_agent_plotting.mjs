@@ -44,7 +44,7 @@ export const tests = [
       assert.strictEqual(ts.summary.remaining_budget_cents, 25000);
       assert.strictEqual(ts.summary.utilization_pct, 0);
       assert.strictEqual(ts.summary.ctr_pct, 0);
-      assert.strictEqual(ts.summary.insufficient_budget_opportunities, 18000);
+      assert.strictEqual(ts.summary.insufficient_budget_opportunities, 360000);
       assert.strictEqual(ts.summary.exhausted_campaigns, 500);
       for (const d of ts.days) {
         assert.strictEqual(d.active_campaigns_end_of_day, 0);

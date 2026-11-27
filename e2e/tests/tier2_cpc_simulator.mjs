@@ -63,7 +63,7 @@ export const tests = [
       assert.strictEqual(report.summary.remaining_budget_cents, 0);
       assert.strictEqual(report.summary.clicks, 500);
       assert.strictEqual(report.summary.spend_cents, 50000);
-      assert.strictEqual(report.summary.ad_requests, 18000);
+      assert.strictEqual(report.summary.ad_requests, 360000);
       assert.ok(report.summary.insufficient_budget > 0);
       assert.ok(report.summary.impressions > 0);
       for (const c of report.campaigns) {
@@ -105,12 +105,12 @@ export const tests = [
         assert.strictEqual(report.summary.clicks, 0);
         assert.strictEqual(report.summary.spend_cents, 0);
         assert.strictEqual(report.summary.remaining_budget_cents, report.summary.budget_cents);
-        assert.strictEqual(report.summary.ad_requests, 18000);
-        assert.strictEqual(report.summary.opportunities, 18000);
-        assert.strictEqual(report.summary.insufficient_budget, 18000);
+        assert.strictEqual(report.summary.ad_requests, 360000);
+        assert.strictEqual(report.summary.opportunities, 360000);
+        assert.strictEqual(report.summary.insufficient_budget, 360000);
         for (const d of report.days) {
           assert.strictEqual(d.impressions, 0);
-          assert.strictEqual(d.insufficient_budget, 600);
+          assert.strictEqual(d.insufficient_budget, 12000);
         }
       }
     },

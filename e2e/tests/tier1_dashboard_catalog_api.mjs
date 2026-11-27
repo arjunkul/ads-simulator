@@ -182,7 +182,7 @@ export const tests = [
     tier: 1,
     area: AREA,
     features: ["F14", "F15"],
-    title: "GET /api/ad-server/sample returns 20 distinct funded R1 ads and GET /api/sim-agent/analysis returns auto-analysis",
+    title: "GET /api/ad-server/sample returns 1 funded R1 ad (default slate_size 1) and GET /api/sim-agent/analysis returns auto-analysis",
     async fn() {
       const server = await startDashboardServer();
       try {
@@ -192,12 +192,8 @@ export const tests = [
         assert.deepStrictEqual(sample1.data, sample2.data, "GET /api/ad-server/sample must be deterministic");
         assert.strictEqual(sample1.data.user_id, "user-0005");
         assert.strictEqual(sample1.data.strategy, "R1");
-        assert.strictEqual(sample1.data.ads.length, 20);
-        assert.strictEqual(
-          new Set(sample1.data.ads.map((a) => a.campaign_id)).size,
-          20,
-          "All 20 ads returned by /api/ad-server/sample must be from distinct funded campaigns",
-        );
+        assert.strictEqual(sample1.data.ads.length, 1);
+        assert.strictEqual(sample1.data.ads[0].slot_position, 1);
 
         const diffSeed = await httpGetJson(`${server.url}/api/ad-server/sample?user_id=user-0005&seed=99`);
         assert.strictEqual(diffSeed.status, 200);
@@ -210,7 +206,7 @@ export const tests = [
         const analysis = await httpGetJson(`${server.url}/api/sim-agent/analysis`);
         assert.strictEqual(analysis.status, 200);
         assert.strictEqual(analysis.data.ranker, "R1");
-        assert.strictEqual(analysis.data.slate_size, 20);
+        assert.strictEqual(analysis.data.slate_size, 1);
         assert.strictEqual(analysis.data.budget_depletion.daily_depletion.length, 30);
         assert.ok(analysis.data.ctr_performance.overall_ctr_pct > 0);
         assert.ok(Array.isArray(analysis.data.findings) && analysis.data.findings.length >= 1);

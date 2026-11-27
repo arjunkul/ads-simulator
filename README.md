@@ -61,7 +61,7 @@ Outputs written atomically to `output/sim-agent/`:
 - `budget_spent_30d.svg` — Standalone dual-panel 30-day budget spend SVG plot
 - `analysis.json` — Full `SimulationAnalysis` (depletion milestones, CTR, eCPM, Gini, findings)
 
-Pass `--no-impression-target` to run the natural user-independent request stream (600 requests/day × 20 ads/req = 12,000 impressions/day across 30 days).
+Pass `--no-impression-target` to run the natural user-independent request stream (12,000 requests/day × 1 slot/visitor = 12,000 impressions/day across 30 days).
 
 ### 6. Launch the Feature, Flowchart & Analyzer Dashboard (or export static bundle)
 ```sh

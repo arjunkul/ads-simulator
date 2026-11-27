@@ -42,14 +42,14 @@ export const tests = [
         impressions: 1000000,
       });
       assert.strictEqual(report.summary.budget_cents, 5000000);
-      assert.strictEqual(report.summary.remaining_budget_cents, 4801600);
+      assert.strictEqual(report.summary.remaining_budget_cents, 4797200);
       assert.strictEqual(report.summary.opportunities, 1000000);
       assert.strictEqual(report.summary.no_matching_category, 0);
       assert.strictEqual(report.summary.insufficient_budget, 0);
       assert.strictEqual(report.summary.impressions, 1000000);
-      assert.strictEqual(report.summary.clicks, 1984);
-      assert.strictEqual(report.summary.spend_cents, 198400);
-      assert.ok(report.summary.ad_requests >= 50000, "R1 1M impressions requires >= 50k ad-server requests");
+      assert.strictEqual(report.summary.clicks, 2028);
+      assert.strictEqual(report.summary.spend_cents, 202800);
+      assert.strictEqual(report.summary.ad_requests, 1000000, "Single-slot 1M impressions requires 1M ad-server requests");
     },
   }),
 
@@ -83,8 +83,8 @@ export const tests = [
       for (let i = 10; i < 30; i++) {
         assert.strictEqual(report.days[i].impressions, 33333, `Day ${i + 1} must deliver 33333 impressions`);
       }
-      assert.strictEqual(report.days[0].clicks, 60);
-      assert.strictEqual(report.days[0].spend_cents, 6000);
+      assert.strictEqual(report.days[0].clicks, 63);
+      assert.strictEqual(report.days[0].spend_cents, 6300);
     },
   }),
 
@@ -93,7 +93,7 @@ export const tests = [
     tier: 1,
     area: AREA,
     features: ["F7"],
-    title: "Natural user-independent request mode (omitting --impressions) delivers 360k impressions across 18k R1 requests",
+    title: "Natural user-independent request mode (omitting --impressions) delivers 360k impressions across 360k single-slot R1 requests",
     async fn(ctx) {
       const mpPath = await generateMarketplace(path.join(ctx.tmpDir, "mkt"), 42);
       const outPath = path.join(ctx.tmpDir, "natural.json");
@@ -112,16 +112,16 @@ export const tests = [
         impressions: null,
       });
       assert.strictEqual(report.summary.budget_cents, 5000000);
-      assert.strictEqual(report.summary.remaining_budget_cents, 4929900);
-      assert.strictEqual(report.summary.ad_requests, 18000);
+      assert.strictEqual(report.summary.remaining_budget_cents, 4925600);
+      assert.strictEqual(report.summary.ad_requests, 360000);
       assert.strictEqual(report.summary.opportunities, 360000);
       assert.strictEqual(report.summary.no_matching_category, 0);
       assert.strictEqual(report.summary.insufficient_budget, 0);
       assert.strictEqual(report.summary.impressions, 360000);
-      assert.strictEqual(report.summary.clicks, 701);
-      assert.strictEqual(report.summary.spend_cents, 70100);
+      assert.strictEqual(report.summary.clicks, 744);
+      assert.strictEqual(report.summary.spend_cents, 74400);
       for (const d of report.days) {
-        assert.strictEqual(d.ad_requests, 600);
+        assert.strictEqual(d.ad_requests, 12000);
         assert.strictEqual(d.opportunities, 12000);
         assert.strictEqual(d.impressions, 12000);
       }
@@ -212,7 +212,7 @@ export const tests = [
     tier: 1,
     area: AREA,
     features: ["F7", "F8"],
-    title: "Standalone visit-generator CLI operates ad-server Strategy R1 returning 20 distinct funded campaigns per request",
+    title: "Standalone visit-generator CLI operates ad-server Strategy R1 returning 1 funded ad per visitor slot",
     async fn(ctx) {
       const outA = path.join(ctx.tmpDir, "slates-a.json");
       const outB = path.join(ctx.tmpDir, "slates-b.json");
@@ -220,14 +220,12 @@ export const tests = [
         "--seed", "42",
         "--requests", "15",
         "--ranker", "R1",
-        "--slate-size", "20",
         "--output", outA,
       ]);
       await runBinaryOk("visit-generator", [
         "--seed", "42",
         "--requests", "15",
         "--ranker", "R1",
-        "--slate-size", "20",
         "--output", outB,
       ]);
 
@@ -239,17 +237,16 @@ export const tests = [
 
       const data = readJsonFile(outA);
       assert.strictEqual(data.ranker, "R1");
-      assert.strictEqual(data.slate_size, 20);
+      assert.strictEqual(data.slate_size, 1);
       assert.strictEqual(data.total_requests, 15);
-      assert.strictEqual(data.total_impressions, 300);
+      assert.strictEqual(data.total_impressions, 15);
       assert.strictEqual(data.slates.length, 15);
 
       for (const rec of data.slates) {
         assert.ok(/^user-\d{4}$/.test(rec.user_id), `Expected valid user_id, got ${rec.user_id}`);
         assert.strictEqual(rec.strategy, "R1");
-        assert.strictEqual(rec.ads.length, 20);
-        const ids = new Set(rec.ads.map((a) => a.campaign_id));
-        assert.strictEqual(ids.size, 20, "All 20 served ads in an R1 slate must come from distinct funded campaigns");
+        assert.strictEqual(rec.ads.length, 1);
+        assert.strictEqual(rec.ads[0].slot_position, 1);
       }
     },
   }),

@@ -291,14 +291,15 @@ pub fn build_catalog() -> SimulatorCatalog {
             parameters: vec![
                 param("user_independent_arrivals", "Preference-Independent Visit Arrivals", visit.user_independent_arrivals, "bool"),
                 param("default_days", "Simulation Horizon", visit.default_days, "days"),
+                param("default_slots_per_visit", "Ad Slots / Visitor", visit.default_slots_per_visit, "slots / visit"),
                 param("default_daily_requests", "Default Daily Ad Requests", visit.default_daily_requests, "requests/day"),
                 param("rng_stream", "Visit Arrival RNG Stream", format!("ChaCha8 Stream {}", visit.rng_stream), "stream"),
                 param("default_seed", "Default Seed", visit.default_seed, "u64"),
             ],
             features: vec![
-                feat("Preference-Independent Visit Arrivals & Serving Boundary", "Samples visiting users uniformly on Stream 1 and sends only user_id to AdServingTarget::serve_ads(user_id), keeping AdServer decoupled from shopper preferences."),
+                feat("Preference-Independent Visit Arrivals & Single-Slot Boundary", "Samples visiting users uniformly on Stream 1, produces 1 ad slot per visitor (accepting at most a single ad per request), and sends only user_id to AdServingTarget::serve_ads(user_id)."),
                 feat("PST Diurnal Intraday Arrival Schedule", "Generates split-normal PST arrival timestamps peaking at 08:00 PST and tapering off around 18:00 PST when pacing-1 is active."),
-                feat("Dual Request & Target Quota Modes", "Supports natural visit request streams (600 req/day = 12k impressions/day at slate 20) or exact 30-day impression quotas."),
+                feat("Dual Request & Target Quota Modes", "Supports natural visit request streams (12,000 req/day = 12k impressions/day at 1 slot/visitor) or exact 30-day impression quotas."),
                 feat("Standalone CLI Binary & Unreachable Quota Guard", "visit-generator CLI produces standalone JSON slates directly from marketplace users/categories and AdServer, and fails cleanly when budgets deplete."),
             ],
             gaps_and_simplifications: vec![
@@ -556,8 +557,8 @@ pub fn build_catalog() -> SimulatorCatalog {
         edge("advertiser-catalog", "ad-server", "500 funded CPC campaigns"),
         edge("visit-generator", "ad-server", "serve_ads(user_id) & record_impression"),
         edge("ad-server", "ads-ranker-r1", "eligible funded pool"),
-        edge("ads-ranker-r1", "ad-server", "20 distinct funded campaigns"),
-        edge("ad-server", "user-activity-oracle", "20-ad served slate"),
+        edge("ads-ranker-r1", "ad-server", "1 funded campaign (default slate_size 1)"),
+        edge("ad-server", "user-activity-oracle", "single-slot served ad"),
         edge("visit-generator", "user-activity-oracle", "visiting user_index"),
         edge("user-activity-oracle", "ad-server", "record_impression (click -> -CPC)"),
         edge("visit-generator", "delivery-click-engine", "delivered impressions & clicks"),
@@ -708,7 +709,7 @@ mod tests {
         assert_eq!(catalog.pieces.len(), 12);
         assert_eq!(catalog.summary_counts.pieces, 12);
         assert_eq!(catalog.summary_counts.crates, 7);
-        assert_eq!(catalog.summary_counts.r1_slate_size, 20);
+        assert_eq!(catalog.summary_counts.r1_slate_size, 1);
         assert!(catalog.pipeline_edges.len() >= 10);
         assert!(catalog.summary_counts.gaps_and_simplifications >= 3);
 

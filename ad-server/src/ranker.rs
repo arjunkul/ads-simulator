@@ -18,11 +18,11 @@ use serde::{Deserialize, Serialize};
 use crate::{BiddingStrategy, CampaignState, DEFAULT_CPC_CENTS, ScoringStrategy, compute_bid};
 
 /// Default number of distinct funded campaigns returned per ad-server request under Strategy R1.
-pub const R1_SLATE_SIZE: usize = 20;
+pub const R1_SLATE_SIZE: usize = 1;
 /// Default number of distinct funded campaigns returned per ad-server request under Strategy R2.
-pub const R2_SLATE_SIZE: usize = 20;
+pub const R2_SLATE_SIZE: usize = 1;
 /// Default number of distinct funded campaigns returned per ad-server request under Strategy R3.
-pub const R3_SLATE_SIZE: usize = 20;
+pub const R3_SLATE_SIZE: usize = 1;
 /// Per-slot ε-greedy uniform exploration probability for Strategy R2 (10%).
 pub const R2_EPSILON: f64 = 0.10;
 /// Low-CTR-calibrated UCB1 exploration coefficient for Scoring S1.
@@ -38,7 +38,7 @@ pub struct ServingContext<'a> {
 /// Supported ads-ranker (slate selection) strategies.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RankerStrategy {
-    /// Strategy R1 (`Rank-Uniform`): select up to 20 distinct random campaigns that currently have budget.
+    /// Strategy R1 (`Rank-Uniform`): select up to `slate_size` (default 1) distinct random campaigns that currently have budget.
     #[default]
     #[serde(
         rename = "R1",
@@ -90,7 +90,7 @@ impl RankerStrategy {
     pub const fn description(self) -> &'static str {
         match self {
             RankerStrategy::R1 => {
-                "Select up to 20 random distinct campaigns with remaining budget >= CPC"
+                "Select up to slate_size (default 1) random distinct campaigns with remaining budget >= CPC"
             }
             RankerStrategy::R2 => {
                 "Cold-start priority, then Top-K by candidate score with 10% per-slot ε-greedy exploration"
@@ -212,7 +212,7 @@ pub trait AdsRanker: Send + Sync {
     }
 }
 
-/// Strategy R1: selects up to `slate_size` (default 20) distinct campaigns uniformly at random
+/// Strategy R1: selects up to `slate_size` (default 1) distinct campaigns uniformly at random
 /// from the set of currently funded, paced-eligible campaigns.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct R1RandomBudgetedRanker {
@@ -615,13 +615,17 @@ mod tests {
     }
 
     #[test]
-    fn r1_selects_twenty_distinct_eligible_campaigns_and_caps_when_fewer_exist() {
-        let ranker = R1RandomBudgetedRanker::default();
-        assert_eq!(ranker.strategy(), RankerStrategy::R1);
-        assert_eq!(ranker.slate_size(), 20);
+    fn r1_defaults_to_single_slot_and_multi_slot_selects_distinct_eligible_campaigns() {
+        let default_ranker = R1RandomBudgetedRanker::default();
+        assert_eq!(default_ranker.strategy(), RankerStrategy::R1);
+        assert_eq!(default_ranker.slate_size(), 1);
 
         let eligible: Vec<usize> = (0..500).collect();
         let mut rng = ChaCha8Rng::seed_from_u64(42);
+        let picked_one = default_ranker.select_campaigns("user-0001", &eligible, &[], &mut rng);
+        assert_eq!(picked_one.len(), 1);
+
+        let ranker = R1RandomBudgetedRanker::new(20);
         let picked = ranker.select_campaigns("user-0001", &eligible, &[], &mut rng);
         assert_eq!(picked.len(), 20);
         let unique: HashSet<_> = picked.iter().copied().collect();
@@ -709,7 +713,7 @@ mod tests {
         assert_eq!(resp.scoring, ScoringStrategy::S2);
         let top10: HashSet<_> = resp.ads.iter().take(10).map(|a| a.campaign_index).collect();
         assert_eq!(top10, (10..20).collect::<HashSet<_>>());
-        assert_eq!(R3GreedyTopKRanker::default().slate_size(), 20);
+        assert_eq!(R3GreedyTopKRanker::default().slate_size(), 1);
     }
 
     #[test]
@@ -739,6 +743,6 @@ mod tests {
         let resp_a = a.serve_ads("user-0001");
         let resp_b = b.serve_ads("user-0001");
         assert_eq!(resp_a, resp_b);
-        assert_eq!(R2OnlineCtrRanker::default().slate_size(), 20);
+        assert_eq!(R2OnlineCtrRanker::default().slate_size(), 1);
     }
 }

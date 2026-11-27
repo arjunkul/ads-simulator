@@ -851,7 +851,7 @@ mod tests {
         assert_eq!(ad_sample.status_code, 200);
         let parsed_ads: AdResponse = serde_json::from_slice(&ad_sample.body).unwrap();
         assert_eq!(parsed_ads.user_id, "user-0007");
-        assert_eq!(parsed_ads.ads.len(), 20);
+        assert_eq!(parsed_ads.ads.len(), 1);
 
         let not_found = dispatch(
             &HttpRequest {

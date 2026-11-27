@@ -34,6 +34,6 @@ pub use user_activity_oracle::{
 };
 pub use visit_generator::{
     AdServingTarget, DEFAULT_DAILY_REQUESTS, DEFAULT_DAYS, DEFAULT_SEED as VISIT_DEFAULT_SEED,
-    DayGenerationStats, GeneratedImpression, RNG_STREAM, VisitGenerator, VisitGeneratorConfig,
-    VisitGeneratorSpec, visit_generator_spec,
+    DEFAULT_SLOTS_PER_VISIT, DayGenerationStats, GeneratedImpression, RNG_STREAM, VisitGenerator,
+    VisitGeneratorConfig, VisitGeneratorSpec, visit_generator_spec,
 };

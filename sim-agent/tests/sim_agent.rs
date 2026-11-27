@@ -573,5 +573,5 @@ fn cli_explicit_ranking_scoring_pacing_recorded_across_all_artifacts() {
 
     let svg = fs::read_to_string(out_dir.join(sim_agent::BUDGET_PLOT_SVG_FILENAME)).unwrap();
     assert!(svg.contains("Retrieve-V0"));
-    assert!(svg.contains("Ranker R2 / Scoring S2 / Pacing P1 / bidding-autobid-v0 (Slate 20)"));
+    assert!(svg.contains("Ranker R2 / Scoring S2 / Pacing P1 / bidding-autobid-v0 (Slate 1)"));
 }

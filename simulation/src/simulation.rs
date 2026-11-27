@@ -32,7 +32,7 @@ use ads_ml::{
 use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
 use world_generator::{
-    CLICK_RNG_STREAM as WORLD_CLICK_RNG_STREAM, DEFAULT_DAILY_REQUESTS,
+    CLICK_RNG_STREAM as WORLD_CLICK_RNG_STREAM, DEFAULT_DAILY_REQUESTS, DEFAULT_SLOTS_PER_VISIT,
     DEFAULT_WORLD_MODEL as WORLD_DEFAULT_WORLD_MODEL, Item,
     MAX_CLICK_PROBABILITY as WORLD_MAX_CLICK_PROBABILITY, Marketplace, VisitGenerator,
     VisitGeneratorConfig, WorldModel,
@@ -581,6 +581,7 @@ pub fn run_with_log_dir<'a>(
             seed: config.seed,
             preference_seed: Some(marketplace.seed.cast_unsigned()),
             days: DAYS,
+            slots_per_visit: DEFAULT_SLOTS_PER_VISIT,
             daily_requests: DEFAULT_DAILY_REQUESTS,
             target_impressions: config.impressions,
             max_click_probability: MAX_CLICK_PROBABILITY,
@@ -969,14 +970,15 @@ mod tests {
             ..Config::default()
         };
         let report = run(&marketplace, config).unwrap();
-        assert_eq!(report.summary.ad_requests, (600 * DAYS) as u64);
-        assert_eq!(report.summary.opportunities, (600 * DAYS) as u64);
+        let expected_requests = (super::DEFAULT_DAILY_REQUESTS * DAYS) as u64;
+        assert_eq!(report.summary.ad_requests, expected_requests);
+        assert_eq!(report.summary.opportunities, expected_requests);
         assert_eq!(report.summary.activity, Activity::default());
         assert_eq!(
             report.summary.remaining_budget_cents,
             report.summary.budget_cents
         );
-        assert_eq!(report.summary.insufficient_budget, (600 * DAYS) as u64);
+        assert_eq!(report.summary.insufficient_budget, expected_requests);
 
         config.impressions = Some(1);
         let error = run(&marketplace, config).unwrap_err();
@@ -1013,7 +1015,7 @@ mod tests {
     fn owned_report_round_trips_natural_mode_json() {
         let marketplace = generate_marketplace(42);
         let report = run(&marketplace, Config::default()).unwrap();
-        assert_eq!(report.summary.ad_requests, 18_000);
+        assert_eq!(report.summary.ad_requests, 360_000);
         assert_eq!(report.summary.activity.impressions, 360_000);
         let borrowed_json = serde_json::to_string(&report).unwrap();
         let owned = report.to_owned_report();

@@ -176,7 +176,8 @@ fn run(args: Args) -> Result<PathBuf, Box<dyn Error>> {
     let mut slates = Vec::with_capacity(args.requests);
     let mut total_impressions = 0usize;
     for _ in 0..args.requests {
-        let (request_id, response) = generator.generate_request(&mut ad_server)?;
+        let (request_id, mut response) = generator.generate_request(&mut ad_server)?;
+        response.ads.truncate(generator.slots_per_visit());
         total_impressions += response.ads.len();
         slates.push(RequestRecord {
             request_id,

@@ -21,12 +21,19 @@ use crate::user_activity_oracle::{
 };
 
 pub const DEFAULT_DAYS: usize = 30;
+/// Default number of ad slots produced per visitor arrival.
+/// For now each visitor only has 1 ad slot, so the world only accepts a single ad per request.
+pub const DEFAULT_SLOTS_PER_VISIT: usize = 1;
 /// Default number of ad-server requests issued per day when no impression target is specified.
-/// With R1's 20-ad slate, 600 requests/day produces 12,000 impressions/day (360,000 over 30 days).
-pub const DEFAULT_DAILY_REQUESTS: usize = 600;
+/// With 1 slot per visitor, 12,000 requests/day produces 12,000 impressions/day (360,000 over 30 days).
+pub const DEFAULT_DAILY_REQUESTS: usize = 12_000;
 pub const DEFAULT_SEED: u64 = 42;
 /// ChaCha8 RNG stream for preference-independent visit arrivals and diurnal timestamps.
 pub const RNG_STREAM: u64 = 1;
+
+const fn default_slots_per_visit() -> usize {
+    DEFAULT_SLOTS_PER_VISIT
+}
 
 /// Compiled specification of the `visit_generator` module inside `world-generator`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -36,6 +43,7 @@ pub struct VisitGeneratorSpec {
     pub binary_name: String,
     pub version: String,
     pub default_days: usize,
+    pub default_slots_per_visit: usize,
     pub default_daily_requests: usize,
     pub default_seed: u64,
     pub default_world_model: WorldModel,
@@ -55,6 +63,7 @@ pub fn visit_generator_spec() -> VisitGeneratorSpec {
         binary_name: "visit-generator".to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
         default_days: DEFAULT_DAYS,
+        default_slots_per_visit: DEFAULT_SLOTS_PER_VISIT,
         default_daily_requests: DEFAULT_DAILY_REQUESTS,
         default_seed: DEFAULT_SEED,
         default_world_model: DEFAULT_WORLD_MODEL,
@@ -99,6 +108,10 @@ pub struct VisitGeneratorConfig {
     /// parameters (defaults to `seed`).
     pub preference_seed: Option<u64>,
     pub days: usize,
+    /// Number of ad slots produced per visitor arrival (defaults to `1`, so the world accepts
+    /// at most a single ad per visit even if an ad server returns a larger slate).
+    #[serde(default = "default_slots_per_visit")]
+    pub slots_per_visit: usize,
     pub daily_requests: usize,
     pub target_impressions: Option<u64>,
     pub max_click_probability: f64,
@@ -112,6 +125,7 @@ impl Default for VisitGeneratorConfig {
             seed: DEFAULT_SEED,
             preference_seed: None,
             days: DEFAULT_DAYS,
+            slots_per_visit: DEFAULT_SLOTS_PER_VISIT,
             daily_requests: DEFAULT_DAILY_REQUESTS,
             target_impressions: None,
             max_click_probability: MAX_CLICK_PROBABILITY,
@@ -169,6 +183,9 @@ impl VisitGenerator {
         if config.days == 0 {
             return Err(invalid("days must be positive"));
         }
+        if config.slots_per_visit == 0 {
+            return Err(invalid("slots_per_visit must be positive"));
+        }
         let pref_seed = config.preference_seed.unwrap_or(config.seed);
         let user_activity_oracle = UserActivityOracle::from_marketplace(
             marketplace,
@@ -225,6 +242,9 @@ impl VisitGenerator {
         if config.days == 0 {
             return Err(invalid("days must be positive"));
         }
+        if config.slots_per_visit == 0 {
+            return Err(invalid("slots_per_visit must be positive"));
+        }
         let user_activity_oracle = UserActivityOracle::with_world_model(
             profiles,
             config.seed,
@@ -243,6 +263,11 @@ impl VisitGenerator {
             next_request_id: 1,
             total_impressions_delivered: 0,
         })
+    }
+
+    /// Number of ad slots produced per visitor arrival (and maximum ads accepted per request).
+    pub fn slots_per_visit(&self) -> usize {
+        self.config.slots_per_visit
     }
 
     /// Active [`WorldModel`] used by the internal [`UserActivityOracle`].
@@ -299,9 +324,9 @@ impl VisitGenerator {
     }
 
     /// Execute one simulated day (1-based `day`), generating user visits, querying
-    /// `ad_server.serve_ads(user_id)`, evaluating visitor clicks via [`UserActivityOracle`],
-    /// recording outcomes back to `ad_server.record_impression`, and notifying `on_impression`
-    /// for each delivered impression.
+    /// `ad_server.serve_ads(user_id)`, accepting at most `slots_per_visit` ads per visitor,
+    /// evaluating visitor clicks via [`UserActivityOracle`], recording outcomes back to
+    /// `ad_server.record_impression`, and notifying `on_impression` for each delivered impression.
     pub fn run_day<T, F>(
         &mut self,
         day: usize,
@@ -325,6 +350,7 @@ impl VisitGenerator {
         }
 
         let quota = self.daily_quota(day);
+        let slots_per_visit = self.config.slots_per_visit;
         let mut stats = DayGenerationStats {
             day,
             ..DayGenerationStats::default()
@@ -357,7 +383,7 @@ impl VisitGenerator {
                         stats.insufficient_budget += 1;
                         continue;
                     }
-                    for ad in ads {
+                    for ad in ads.into_iter().take(slots_per_visit) {
                         stats.opportunities += 1;
                         let clicked = self.user_activity_oracle.evaluate_click_for_index(
                             user_index,
@@ -409,7 +435,7 @@ impl VisitGenerator {
                             self.total_impressions_delivered
                         )));
                     }
-                    for ad in ads {
+                    for ad in ads.into_iter().take(slots_per_visit) {
                         if stats.impressions >= target_for_day {
                             break;
                         }
@@ -460,8 +486,8 @@ mod tests {
         PREFERENCE_RNG_STREAM, WorldModel,
     };
     use crate::visit_generator::{
-        AdServingTarget, DEFAULT_DAILY_REQUESTS, RNG_STREAM, VisitGenerator, VisitGeneratorConfig,
-        visit_generator_spec,
+        AdServingTarget, DEFAULT_DAILY_REQUESTS, DEFAULT_SLOTS_PER_VISIT, RNG_STREAM,
+        VisitGenerator, VisitGeneratorConfig, visit_generator_spec,
     };
 
     #[derive(Clone, Debug)]
@@ -540,10 +566,12 @@ mod tests {
     }
 
     #[test]
-    fn natural_mode_issues_600_requests_per_day_and_12000_impressions() {
+    fn natural_mode_issues_12000_requests_per_day_and_accepts_single_slot_per_visitor() {
         let mp = generate_marketplace(42);
         let user_ids: Vec<String> = mp.users.iter().map(|u| u.id.clone()).collect();
         let category_ids: Vec<String> = mp.categories.iter().map(|c| c.id.clone()).collect();
+        // Even if an ad server returns a 20-ad slate, the world produces 1 slot/visitor
+        // and only accepts the single top ad (slot 1).
         let mut ad_server = MockAdServer {
             slate_size: 20,
             cpc_cents: 100,
@@ -558,8 +586,13 @@ mod tests {
             },
         )
         .unwrap();
+        assert_eq!(generator.slots_per_visit(), DEFAULT_SLOTS_PER_VISIT);
 
-        let day1 = generator.run_day(1, &mut ad_server, |_| {}).unwrap();
+        let day1 = generator
+            .run_day(1, &mut ad_server, |imp| {
+                assert_eq!(imp.slot_position, 1);
+            })
+            .unwrap();
         assert_eq!(day1.day, 1);
         assert_eq!(day1.ad_requests, DEFAULT_DAILY_REQUESTS as u64);
         assert_eq!(day1.impressions, 12_000);
@@ -570,7 +603,7 @@ mod tests {
     }
 
     #[test]
-    fn targeted_mode_hits_exact_daily_quota_and_errors_when_empty() {
+    fn targeted_mode_hits_exact_daily_quota_with_one_slot_per_visitor_and_errors_when_empty() {
         let mp = generate_marketplace(42);
         let user_ids: Vec<String> = mp.users.iter().map(|u| u.id.clone()).collect();
         let category_ids: Vec<String> = mp.categories.iter().map(|c| c.id.clone()).collect();
@@ -586,6 +619,7 @@ mod tests {
                 seed: 42,
                 preference_seed: None,
                 days: 30,
+                slots_per_visit: DEFAULT_SLOTS_PER_VISIT,
                 daily_requests: DEFAULT_DAILY_REQUESTS,
                 target_impressions: Some(1_000),
                 max_click_probability: 0.0,
@@ -594,12 +628,16 @@ mod tests {
         )
         .unwrap();
 
-        let day1 = generator.run_day(1, &mut ad_server, |_| {}).unwrap();
+        let day1 = generator
+            .run_day(1, &mut ad_server, |imp| {
+                assert_eq!(imp.slot_position, 1);
+            })
+            .unwrap();
         assert_eq!(day1.impressions, 34);
-        assert_eq!(day1.ad_requests, 2);
+        assert_eq!(day1.ad_requests, 34);
 
         let mut empty_server = MockAdServer {
-            slate_size: 20,
+            slate_size: 1,
             cpc_cents: 100,
             empty: true,
         };
@@ -610,6 +648,7 @@ mod tests {
                 seed: 42,
                 preference_seed: None,
                 days: 30,
+                slots_per_visit: DEFAULT_SLOTS_PER_VISIT,
                 daily_requests: DEFAULT_DAILY_REQUESTS,
                 target_impressions: Some(30),
                 ..VisitGeneratorConfig::default()
@@ -624,12 +663,12 @@ mod tests {
     fn from_marketplace_with_world_model_v1_runs_deterministically_with_clicks() {
         let mp = generate_marketplace(42);
         let mut server_a = MockAdServer {
-            slate_size: 20,
+            slate_size: 1,
             cpc_cents: 100,
             empty: false,
         };
         let mut server_b = MockAdServer {
-            slate_size: 20,
+            slate_size: 1,
             cpc_cents: 100,
             empty: false,
         };
@@ -663,7 +702,8 @@ mod tests {
         assert_eq!(spec.click_rng_stream, CLICK_RNG_STREAM);
         assert_eq!(spec.preference_rng_stream, PREFERENCE_RNG_STREAM);
         assert_eq!(spec.max_click_probability, MAX_CLICK_PROBABILITY);
-        assert_eq!(spec.default_daily_requests, 600);
+        assert_eq!(spec.default_slots_per_visit, 1);
+        assert_eq!(spec.default_daily_requests, 12_000);
         assert_eq!(spec.default_days, 30);
     }
 }

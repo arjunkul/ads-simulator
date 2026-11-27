@@ -52,11 +52,11 @@ export const tests = [
           cpc_cents: 100,
           impressions: 1000000,
         });
-        assert.strictEqual(res.data.timeseries.summary.total_clicks, 1984);
-        assert.strictEqual(res.data.timeseries.summary.total_spend_cents, 198400);
+        assert.strictEqual(res.data.timeseries.summary.total_clicks, 2028);
+        assert.strictEqual(res.data.timeseries.summary.total_spend_cents, 202800);
         assert.ok(res.data.analysis, "POST /api/sim-agent/run should include SimulationAnalysis");
-        assert.strictEqual(res.data.analysis.budget_depletion.total_spend_cents, 198400);
-        assert.strictEqual(res.data.analysis.ctr_performance.total_clicks, 1984);
+        assert.strictEqual(res.data.analysis.budget_depletion.total_spend_cents, 202800);
+        assert.strictEqual(res.data.analysis.ctr_performance.total_clicks, 2028);
         validateBudgetSvg(res.data.svg, res.data.timeseries);
       } finally {
         await server.stop();
@@ -82,8 +82,8 @@ export const tests = [
         assert.strictEqual(res.status, 200);
         validateBudgetTimeSeries(res.data.timeseries, { sim_seed: 42, impressions: null });
         assert.strictEqual(res.data.timeseries.summary.total_impressions, 360000);
-        assert.strictEqual(res.data.timeseries.summary.total_clicks, 701);
-        assert.strictEqual(res.data.timeseries.summary.total_spend_cents, 70100);
+        assert.strictEqual(res.data.timeseries.summary.total_clicks, 744);
+        assert.strictEqual(res.data.timeseries.summary.total_spend_cents, 74400);
         validateBudgetSvg(res.data.svg, res.data.timeseries);
       } finally {
         await server.stop();

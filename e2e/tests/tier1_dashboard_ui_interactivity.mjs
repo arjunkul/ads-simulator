@@ -368,7 +368,7 @@ export const tests = [
           assert.ok(initial.topRows === 5, `Expected 5 top campaigns rows in analyzer table, got ${initial.topRows}`);
           assert.ok(initial.findingCards >= 2, `Expected >= 2 automated finding cards, got ${initial.findingCards}`);
           assert.ok(/CTR|eCPM|Utilization/i.test(initial.analysisText), "Analyzer section must display CTR/eCPM/Utilization metrics");
-          assert.strictEqual(initial.slateRows, 20, `Expected 20 ad-server R1 slate rows, got ${initial.slateRows}`);
+          assert.strictEqual(initial.slateRows, 1, `Expected 1 ad-server R1 slate row, got ${initial.slateRows}`);
           assert.ok(initial.summaryText.includes("user-0001"), "Initial ad-server summary should show default user-0001");
 
           // Query Live Ad-Server (R1) for user-0042 with seed 99
@@ -395,8 +395,8 @@ export const tests = [
             };
           })()`);
 
-          assert.strictEqual(afterQuery.rowCount, 20, "Updated ad-server R1 query must return 20 rows");
-          assert.strictEqual(afterQuery.uniqueCampaigns, 20, "All 20 rendered R1 ads must be from distinct campaigns");
+          assert.strictEqual(afterQuery.rowCount, 1, "Updated ad-server R1 query must return 1 row");
+          assert.strictEqual(afterQuery.uniqueCampaigns, 1, "Rendered R1 ad must belong to a funded campaign");
           assert.ok(afterQuery.summary.includes("user-0042"), "Updated ad-server summary must show user-0042");
           assert.deepStrictEqual(session.consoleErrors, []);
           assert.deepStrictEqual(session.pageErrors, []);
