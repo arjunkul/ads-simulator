@@ -171,12 +171,12 @@
       <div class="chart-header">
         <div>
           <strong>30-Day Daily Trajectory (100M Impressions · 4 Profiles)</strong>
-          <div style="font-size:0.8rem;color:var(--muted);">P3 (Score-R1 · WM-v0) reaches 3.7888% late-month CTR winning Days 2–30; P4 (Score-R1 · WM-v1 + Top-20 Retrieve-V0) wins Day 1 (0.4369%) and averages 0.4411% CTR ($441k spend) under noisy hierarchical clicks</div>
+          <div style="font-size:0.8rem;color:var(--muted);">Apples-to-apples Top-20 Retrieve-V0 comparison: P4 (Score-R1 · WM-v1) wins all 30/30 days at 0.4411% CTR ($441k spend, 2.19× P3), while P3 (Score-R1 · WM-v0) averages 0.2014% CTR ($201k) with candidates capped at slate size 20</div>
         </div>
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
           <div class="legend">
-            <span class="legend-item"><span class="swatch" style="background:var(--r3);"></span>P3 · R3 / Score-R1 / pacing-1 / autobid-v0 (WM-v0)</span>
             <span class="legend-item"><span class="swatch" style="background:var(--r4);"></span>P4 · R3 / Score-R1 / pacing-1 / autobid-v0 (WM-v1)</span>
+            <span class="legend-item"><span class="swatch" style="background:var(--r3);"></span>P3 · R3 / Score-R1 / pacing-1 / autobid-v0 (WM-v0)</span>
             <span class="legend-item"><span class="swatch" style="background:var(--r2);"></span>P2 · R2 / S1 / P0</span>
             <span class="legend-item"><span class="swatch" style="background:var(--r1);"></span>P1 · R1 / S0 / P0</span>
           </div>
@@ -186,7 +186,7 @@
           </div>
           <div class="controls" role="group" aria-label="Chart view">
             <button class="btn active" data-scope="all">All 4 Profiles</button>
-            <button class="btn" data-scope="baseline">Zoom P1 / P2 / P4</button>
+            <button class="btn" data-scope="baseline">Zoom WM-v0 (P1 / P2 / P3)</button>
           </div>
         </div>
       </div>
@@ -297,25 +297,25 @@
         "P3 · R3/Score-R1/pacing-1/autobid": {
           id: "P3 · R3/Score-R1/pacing-1/autobid",
           worldModel: "world-model-v0", worldModelName: "Binary Category Oracle",
-          retrieval: "Retrieve-V0", retrievalName: "Active Budget Pool (Full)",
+          retrieval: "Retrieve-V0", retrievalName: "Active Budget Pool (Top-20)",
           ranking: "R3", rankingName: "Greedy Top-K",
           scoring: "Score-R1", scoringName: "PyTorch L2 LR CTR",
           pacing: "pacing-1", pacingName: "24h PST Intraday Linear",
           bidding: "bidding-autobid-v0", biddingName: "eCPM Auto-Bid V0",
           slate: 20,
-          ctr: 3.5745, spend: "$3,574,532.00", clicks: "3,574,532", ecpm: "$35.75",
-          gini: "0.128", top10: "14.3%", util: "12.77%", exhausted: "0 / 500", zeroClick: 0,
-          impRange: "60,096 – 359,670 (median 197,496, σ 45,130)",
-          maxUtil: "77.26% (advertiser-23-campaign-06, $8,817 / $11,412)",
-          daysWon: "29 / 30", runtime: "33m 39s",
+          ctr: 0.2014, spend: "$201,406.00", clicks: "201,406", ecpm: "$2.01",
+          gini: "0.079", top10: "12.6%", util: "0.72%", exhausted: "0 / 500", zeroClick: 0,
+          impRange: "198,472 – 201,517 (median 200,000, σ 441)",
+          maxUtil: "4.22% (advertiser-07-campaign-06, $464 / $10,983)",
+          daysWon: "0 / 30", runtime: "28m 26s",
           cli: "sim-agent --retrieval Retrieve-V0 --ranker R3 --scoring Score-R1 --pacing pacing-1 --bidding bidding-autobid-v0 --world-model world-model-v0 --campaign-budget-min-cents 1000000 --campaign-budget-max-cents 10000000 --impressions 100000000",
-          notes: "Personalized PyTorch L2 logistic regression (Score-R1) cold-trained daily on exact sufficient stats + 24h PST linear intraday pacing + eCPM autobidding under world-model-v0 (full-pool retrieval). Cold-starts at 0.1981% on Day 1, leaps to 3.2662% on Day 2, and reaches 3.7888% across Days 16–30 (peaking at 3.8255% on Day 29 = 95.6% of the 4.00% oracle ceiling), while keeping Spend Gini at just 0.128 across all 500 campaigns.",
-          dailyCtr: [0.1981,3.2662,3.4226,3.4899,3.4904,3.5485,3.5793,3.5954,3.6150,3.6445,3.6693,3.6874,3.7101,3.7536,3.7336,3.7341,3.7645,3.7656,3.7614,3.7804,3.7784,3.8028,3.7845,3.8094,3.7889,3.8030,3.8000,3.8157,3.8255,3.8177],
-          dailySpend: [6604,108874,114088,116329,116348,118283,119310,119848,120501,121484,122309,122912,123669,125121,124454,124471,125484,125519,125379,126013,125948,126760,126149,126981,126297,126768,126667,127190,127516,127256],
+          notes: "Apples-to-apples counterpart to P4: identical PyTorch L2 LR (Score-R1) + R3 + 24h PST linear intraday pacing + eCPM autobidding + Top-20 Retrieve-V0 stack evaluated under world-model-v0. Because Retrieve-V0 caps candidates at 20 uniformly sampled funded campaigns per request (= slate_size 20, σ = 441 impr/campaign), Score-R1/R3 only reorders the 20 retrieved ads without filtering across the 500-campaign pool, averaging 0.2014% CTR ($201,406 spend, peak 0.2068% on Day 10, Spend Gini 0.079).",
+          dailyCtr: [0.2020,0.2004,0.2047,0.2017,0.2044,0.2048,0.1968,0.1994,0.1999,0.2068,0.2003,0.2024,0.2024,0.2042,0.2021,0.2017,0.2030,0.2002,0.2013,0.2013,0.2056,0.2038,0.2016,0.1973,0.1954,0.2003,0.1982,0.2000,0.1983,0.2017],
+          dailySpend: [6735,6681,6825,6724,6813,6828,6561,6648,6662,6893,6678,6747,6747,6808,6736,6723,6768,6672,6711,6710,6852,6794,6719,6576,6513,6676,6608,6666,6609,6723],
           topCamps: [
-            { id: "advertiser-37-campaign-08", cat: "cat-064", stat: "295,963 impr · 11,256 clicks (3.803%)" },
-            { id: "advertiser-37-campaign-06", cat: "cat-064", stat: "288,870 impr · 11,125 clicks (3.851%)" },
-            { id: "advertiser-07-campaign-08", cat: "cat-064", stat: "285,815 impr · 11,029 clicks (3.859%)" }
+            { id: "advertiser-05-campaign-02", cat: "cat-049", stat: "199,997 impr · 574 clicks (0.287%)" },
+            { id: "advertiser-05-campaign-04", cat: "cat-049", stat: "200,204 impr · 564 clicks (0.282%)" },
+            { id: "advertiser-45-campaign-04", cat: "cat-049", stat: "200,529 impr · 564 clicks (0.281%)" }
           ]
         },
         "P4 · R3/Score-R1/pacing-1/autobid · WM-v1": {
@@ -331,9 +331,9 @@
           gini: "0.289", top10: "22.1%", util: "1.58%", exhausted: "0 / 500", zeroClick: 0,
           impRange: "198,599 – 201,112 (median 199,990, σ 456)",
           maxUtil: "14.82% (advertiser-09-campaign-10, $4,328 / $29,194)",
-          daysWon: "1 / 30", runtime: "28m 33s",
+          daysWon: "30 / 30", runtime: "28m 33s",
           cli: "sim-agent --retrieval Retrieve-V0 --ranker R3 --scoring Score-R1 --pacing pacing-1 --bidding bidding-autobid-v0 --world-model world-model-v1 --campaign-budget-min-cents 1000000 --campaign-budget-max-cents 10000000 --impressions 100000000",
-          notes: "Same serving stack as P3 evaluated under world-model-v1 (hierarchical group/category/advertiser/combo logit shifts, per-impression stochastic noise, and 0.2% non-preferred background CTR) with Retrieve-V0 capped at 20 uniformly sampled campaigns/request. Wins Day 1 (0.4369%) via non-zero background CTR and averages 0.4411% overall CTR (2.19× P1, peak 0.4517% on Day 18, $441k spend). Because Retrieve-V0's 20-candidate cap equals slate_size=20 (σ = 456 impr/campaign), Score-R1/R3 only reorders the 20 retrieved ads rather than filtering out low-pCTR inventory; Spend Gini (0.289) reflects true hierarchical CTR spread across campaigns (top campaign advertiser-09-campaign-10 hits 2.156% CTR).",
+          notes: "Identical 5-axis serving stack and Top-20 Retrieve-V0 cap as P3, differing only in world-model-v1 (hierarchical group/category/advertiser/combo logit shifts, per-impression stochastic noise, and 0.2% non-preferred background CTR). Wins all 30/30 days at 0.4411% overall CTR (2.19× apples-to-apples P3, peak 0.4517% on Day 18, $441,071 spend). With uniform Top-20 retrieval (σ = 456 impr/campaign), Spend Gini rises from 0.079 (P3) to 0.289 (P4) purely from world-model-v1's hierarchical CTR dispersion (top campaign advertiser-09-campaign-10 hits 2.156% CTR).",
           dailyCtr: [0.4369,0.4370,0.4316,0.4426,0.4499,0.4389,0.4368,0.4399,0.4387,0.4468,0.4447,0.4430,0.4400,0.4388,0.4372,0.4374,0.4435,0.4517,0.4427,0.4446,0.4452,0.4415,0.4402,0.4374,0.4342,0.4370,0.4510,0.4419,0.4407,0.4405],
           dailySpend: [14563,14567,14387,14753,14997,14631,14560,14664,14623,14892,14823,14765,14668,14625,14572,14579,14783,15056,14757,14821,14839,14718,14674,14581,14472,14565,15032,14731,14689,14684],
           topCamps: [
@@ -361,7 +361,7 @@
       const r3 = BENCHMARK.metrics["P3 · R3/Score-R1/pacing-1/autobid"];
       const r4 = BENCHMARK.metrics["P4 · R3/Score-R1/pacing-1/autobid · WM-v1"];
       const r3Mult = r3.ctr / r1.ctr;
-      const r4Mult = r4.ctr / r1.ctr;
+      const r4VsR3 = r4.ctr / r3.ctr;
 
       document.getElementById("kpi-strip").innerHTML = `
         <div class="card">
@@ -370,14 +370,14 @@
           <div class="kpi-sub">1 Retr · 3 Rank · 6 Score · 4 Pace · 2 Bid · 2 World Models</div>
         </div>
         <div class="card">
-          <div class="kpi-label">Best Overall CTR (WM-v0)</div>
-          <div class="kpi-value" style="color: var(--success);">${r3.ctr.toFixed(4)}%</div>
-          <div class="kpi-sub">P3 Score-R1 (${r3Mult.toFixed(2)}× vs P1 · 3.79% Days 16–30)</div>
+          <div class="kpi-label">P3 · World Model v0 CTR</div>
+          <div class="kpi-value" style="color: var(--r3);">${r3.ctr.toFixed(4)}%</div>
+          <div class="kpi-sub">${r3.spend} (${r3Mult.toFixed(2)}× vs P1 · Top-20 Retrieve-V0)</div>
         </div>
         <div class="card">
           <div class="kpi-label">P4 · World Model v1 CTR</div>
           <div class="kpi-value" style="color: var(--r4);">${r4.ctr.toFixed(4)}%</div>
-          <div class="kpi-sub">${r4.spend} (${r4Mult.toFixed(2)}× vs P1 · Top-20 Retrieve-V0 cap)</div>
+          <div class="kpi-sub">${r4.spend} (${r4VsR3.toFixed(2)}× vs P3 · wins 30/30 days)</div>
         </div>
         <div class="card">
           <div class="kpi-label">Spend Fairness (Gini)</div>
@@ -490,14 +490,14 @@
 
       const w = 980, h = 250, padL = 64, padR = 20, padT = 16, padB = 30;
       const isAll = chartScope === "all";
-      const minV = isAll ? 0 : (chartMetric === "ctr" ? 0.18 : 6000);
-      const maxV = isAll ? (chartMetric === "ctr" ? 4.0 : 135000) : (chartMetric === "ctr" ? 0.48 : 16000);
+      const minV = isAll ? (chartMetric === "ctr" ? 0.18 : 6000) : (chartMetric === "ctr" ? 0.19 : 6300);
+      const maxV = isAll ? (chartMetric === "ctr" ? 0.48 : 16000) : (chartMetric === "ctr" ? 0.26 : 8700);
       const x = (i) => padL + (i / 29) * (w - padL - padR);
       const y = (v) => padT + (1 - (v - minV) / (maxV - minV)) * (h - padT - padB);
       const pathOf = (arr) => arr.map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
       const ticks = isAll
-        ? (chartMetric === "ctr" ? [0.0, 1.0, 2.0, 3.0, 4.0] : [0, 35000, 70000, 105000, 135000])
-        : (chartMetric === "ctr" ? [0.18, 0.24, 0.30, 0.36, 0.42, 0.48] : [6000, 8000, 10000, 12000, 14000, 16000]);
+        ? (chartMetric === "ctr" ? [0.18, 0.24, 0.30, 0.36, 0.42, 0.48] : [6000, 8000, 10000, 12000, 14000, 16000])
+        : (chartMetric === "ctr" ? [0.19, 0.20, 0.22, 0.24, 0.26] : [6500, 7000, 7500, 8000, 8500]);
       const fmtTick = (t) => chartMetric === "ctr" ? `${t.toFixed(2)}%` : `$${(t / 1000).toFixed(t >= 10000 ? 0 : 1)}k`;
 
       const container = document.getElementById("chart-container");
@@ -507,20 +507,16 @@
             <line x1="${padL}" x2="${w - padR}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" stroke="var(--border)" stroke-dasharray="3 3" opacity="0.7" />
             <text x="${padL - 8}" y="${(y(t) + 4).toFixed(1)}" text-anchor="end" fill="var(--muted)" font-size="11" font-family="ui-monospace,monospace">${fmtTick(t)}</text>
           `).join("")}
-          ${isAll && chartMetric === "ctr" ? `
-            <line x1="${padL}" x2="${w - padR}" y1="${y(4.0).toFixed(1)}" y2="${y(4.0).toFixed(1)}" stroke="var(--success)" stroke-dasharray="5 4" opacity="0.45" />
-            <text x="${w - padR - 4}" y="${(y(4.0) + 13).toFixed(1)}" text-anchor="end" fill="var(--success)" font-size="10" font-family="ui-monospace,monospace">4.00% WM-v0 Oracle Ceiling</text>
-          ` : ""}
           ${[1, 5, 10, 15, 20, 25, 30].map((d) => `
             <text x="${x(d - 1).toFixed(1)}" y="${h - 8}" text-anchor="middle" fill="var(--muted)" font-size="11" font-family="ui-monospace,monospace">Day ${d}</text>
           `).join("")}
           <path d="${pathOf(r1Arr)}" fill="none" stroke="var(--r1)" stroke-width="2" />
           <path d="${pathOf(r2Arr)}" fill="none" stroke="var(--r2)" stroke-width="2.2" />
-          <path d="${pathOf(r4Arr)}" fill="none" stroke="var(--r4)" stroke-width="2.4" />
-          ${isAll ? `<path d="${pathOf(r3Arr)}" fill="none" stroke="var(--r3)" stroke-width="2.8" />` : ""}
+          <path d="${pathOf(r3Arr)}" fill="none" stroke="var(--r3)" stroke-width="2.4" />
+          ${isAll ? `<path d="${pathOf(r4Arr)}" fill="none" stroke="var(--r4)" stroke-width="2.8" />` : ""}
           ${r1Arr.map((_, i) => `
-            ${isAll ? `<circle cx="${x(i).toFixed(1)}" cy="${y(r3Arr[i]).toFixed(1)}" r="3.2" fill="var(--r3)" />` : ""}
-            <circle cx="${x(i).toFixed(1)}" cy="${y(r4Arr[i]).toFixed(1)}" r="2.8" fill="var(--r4)" />
+            ${isAll ? `<circle cx="${x(i).toFixed(1)}" cy="${y(r4Arr[i]).toFixed(1)}" r="3.2" fill="var(--r4)" />` : ""}
+            <circle cx="${x(i).toFixed(1)}" cy="${y(r3Arr[i]).toFixed(1)}" r="2.8" fill="var(--r3)" />
             <circle cx="${x(i).toFixed(1)}" cy="${y(r2Arr[i]).toFixed(1)}" r="2.6" fill="var(--r2)" />
             <circle cx="${x(i).toFixed(1)}" cy="${y(r1Arr[i]).toFixed(1)}" r="2.2" fill="var(--r1)" />
             <rect x="${(x(i) - 14).toFixed(1)}" y="${padT}" width="28" height="${h - padT - padB}" fill="transparent" style="cursor:crosshair;" data-day-idx="${i}" />
@@ -533,9 +529,9 @@
           const i = Number(rect.dataset.dayIdx);
           const v1 = r1Arr[i], v2 = r2Arr[i], v3 = r3Arr[i], v4 = r4Arr[i];
           if (chartMetric === "ctr") {
-            readout.innerHTML = `<span>Day ${i + 1}: P3 <strong style="color:var(--r3);">${v3.toFixed(4)}%</strong> · P4 <strong style="color:var(--r4);">${v4.toFixed(4)}%</strong> · P2 <strong style="color:var(--r2);">${v2.toFixed(4)}%</strong> · P1 <strong>${v1.toFixed(4)}%</strong></span><span style="color:var(--r4);">P4 is ${(v4 / v1).toFixed(2)}× P1 · P3 is ${(v3 / v1).toFixed(2)}× P1</span>`;
+            readout.innerHTML = `<span>Day ${i + 1}: P4 <strong style="color:var(--r4);">${v4.toFixed(4)}%</strong> · P3 <strong style="color:var(--r3);">${v3.toFixed(4)}%</strong> · P2 <strong style="color:var(--r2);">${v2.toFixed(4)}%</strong> · P1 <strong>${v1.toFixed(4)}%</strong></span><span style="color:var(--r4);">P4 is ${(v4 / v3).toFixed(2)}× P3 · P3 is ${(v3 / v1).toFixed(2)}× P1</span>`;
           } else {
-            readout.innerHTML = `<span>Day ${i + 1}: P3 <strong style="color:var(--r3);">$${v3.toLocaleString()}</strong> · P4 <strong style="color:var(--r4);">$${v4.toLocaleString()}</strong> · P2 <strong style="color:var(--r2);">$${v2.toLocaleString()}</strong> · P1 <strong>$${v1.toLocaleString()}</strong></span><span style="color:var(--r4);">P4 +$${(v4 - v1).toLocaleString()} vs P1</span>`;
+            readout.innerHTML = `<span>Day ${i + 1}: P4 <strong style="color:var(--r4);">$${v4.toLocaleString()}</strong> · P3 <strong style="color:var(--r3);">$${v3.toLocaleString()}</strong> · P2 <strong style="color:var(--r2);">$${v2.toLocaleString()}</strong> · P1 <strong>$${v1.toLocaleString()}</strong></span><span style="color:var(--r4);">P4 +$${(v4 - v3).toLocaleString()} vs P3</span>`;
           }
         });
       });
