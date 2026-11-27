@@ -4,10 +4,10 @@ use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-use ads_simulator::generate_marketplace;
 use tempfile::NamedTempFile;
+use world_generator::generate_marketplace;
 
-const USAGE: &str = "Usage: ads-simulator --output-dir DIRECTORY [--seed INTEGER]";
+const USAGE: &str = "Usage: world-generator --output-dir DIRECTORY [--seed INTEGER]";
 
 fn main() -> std::process::ExitCode {
     match run() {

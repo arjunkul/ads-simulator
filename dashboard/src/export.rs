@@ -144,7 +144,7 @@ pub fn export_static_bundle(
 #[cfg(test)]
 mod tests {
     use ad_server::{AdServer, AdServerConfig};
-    use ads_simulator::generate_marketplace;
+    use world_generator::generate_marketplace;
     use sim_agent::{AgentConfig, render_budget_svg, run_simulation};
     use tempfile::tempdir;
 

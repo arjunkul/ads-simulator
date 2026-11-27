@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::Command;
 
 use ads_marketplace_simulation::OwnedReport;
-use ads_simulator::generate_marketplace;
+use world_generator::generate_marketplace;
 use sim_agent::{
     ANALYSIS_JSON_FILENAME, BUDGET_PLOT_SVG_FILENAME, BudgetTimeSeries, SIMULATION_REPORT_FILENAME,
     SimulationAnalysis, TIMESERIES_CSV_FILENAME, TIMESERIES_JSON_FILENAME, audit_report,

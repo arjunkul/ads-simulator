@@ -928,7 +928,7 @@ pub fn render_text_summary(analysis: &SimulationAnalysis) -> String {
 mod tests {
     use ad_server::{R1_SLATE_SIZE, RankerStrategy};
     use ads_marketplace_simulation::{Config, run};
-    use ads_simulator::generate_marketplace;
+    use world_generator::generate_marketplace;
 
     use crate::{
         FindingSeverity, SimulationAnalysis, analyze_borrowed_report, analyzer_spec,

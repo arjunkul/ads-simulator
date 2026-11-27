@@ -1,7 +1,7 @@
 //! Seeded 30-day click-only CPC ad marketplace simulation library.
 //!
-//! Orchestrates [`visit_simulator::VisitSimulator`] (visit arrivals, ad slot generation, and
-//! [`visit_simulator::ClickOracle`]), [`ad_server::AdServer`] (campaign budget pool + explicit
+//! Orchestrates [`world_generator::VisitGenerator`] (visit arrivals, ad slot generation, and
+//! [`world_generator::UserActivityOracle`]), [`ad_server::AdServer`] (campaign budget pool + explicit
 //! 5-axis `Retrieval × Pacing × Bidding × Scoring × Ranking` strategy pipeline), and `ads-ml`
 //! PyTorch daily CTR training (`Score-R1`).
 
@@ -17,12 +17,6 @@ pub use ad_server::{
     build_retriever, compute_bid, daily_budget_cents, pacing_1_unlock_second,
     run_first_price_auction, sample_pst_second_of_day, validate_strategy,
 };
-pub use visit_simulator::{
-    CLICK_RNG_STREAM, ClickOracle, DEFAULT_DAILY_REQUESTS, DayGenerationStats,
-    GeneratedImpression, INTEREST_COUNT, PREFERENCE_RNG_STREAM, UserPreferenceProfile,
-    VisitSimulator, VisitSimulatorConfig, VisitSimulatorSpec, generate_user_preferences,
-    score_preference, visit_simulator_spec,
-};
 pub use simulation::{
     Activity, CAMPAIGNS_PER_ADVERTISER, Campaign, Config, DAYS, DEFAULT_CPC_CENTS,
     DEFAULT_MAX_CAMPAIGN_BUDGET_CENTS, DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS, DEFAULT_PACING,
@@ -30,10 +24,16 @@ pub use simulation::{
     MAX_CLICK_PROBABILITY, OwnedCampaign, OwnedReport, Report, SCHEMA_VERSION, SimulationSpec,
     Summary, run, run_with_log_dir, simulation_spec,
 };
+pub use world_generator::{
+    CLICK_RNG_STREAM, DEFAULT_DAILY_REQUESTS, DayGenerationStats, GeneratedImpression,
+    INTEREST_COUNT, PREFERENCE_RNG_STREAM, UserActivityOracle, UserActivityOracleSpec,
+    UserPreferenceProfile, VisitGenerator, VisitGeneratorConfig, VisitGeneratorSpec,
+    generate_user_preferences, score_preference, user_activity_oracle_spec, visit_generator_spec,
+};
 
 #[cfg(test)]
 mod tests {
-    use ads_simulator::generate_marketplace;
+    use world_generator::generate_marketplace;
 
     use crate::{
         BiddingStrategy, CAMPAIGNS_PER_ADVERTISER, Config, DAYS, DEFAULT_BIDDING,

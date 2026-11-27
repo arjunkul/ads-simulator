@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::process::Command;
 
-use ads_simulator::{
+use world_generator::{
     ADVERTISER_COUNT, AFFINITY_VIEWS, BrowseReason, CATALOG_SIZE, CATEGORIES_PER_GROUP, CURRENCY,
     DEFAULT_SEED, EXPLORATION_VIEWS, Marketplace, MarketplaceSpec, ORGANIC_PER_CATEGORY,
     SCHEMA_VERSION, TAXONOMY_GROUP_COUNT, USER_COUNT, User, generate_marketplace,
@@ -146,7 +146,7 @@ fn cli_export_round_trips_and_reproduces_the_same_seed() {
     let temp = tempfile::tempdir().unwrap();
     let output_dir = temp.path().join("output");
     let run_export = || {
-        let result = Command::new(env!("CARGO_BIN_EXE_ads-simulator"))
+        let result = Command::new(env!("CARGO_BIN_EXE_world-generator"))
             .args(["--seed", "-42", "--output-dir"])
             .arg(&output_dir)
             .output()
@@ -297,9 +297,9 @@ fn marketplace_spec_matches_constants_generated_data_and_round_trips_json() {
         spec.user_count * spec.exploration_views
     );
 
-    // Verify CLI default seed (src/main.rs) matches DEFAULT_SEED without modifying src/main.rs.
+    // Verify CLI default seed matches DEFAULT_SEED.
     let temp = tempfile::tempdir().unwrap();
-    let result = Command::new(env!("CARGO_BIN_EXE_ads-simulator"))
+    let result = Command::new(env!("CARGO_BIN_EXE_world-generator"))
         .args(["--output-dir"])
         .arg(temp.path())
         .output()
@@ -339,8 +339,7 @@ fn advertiser_omits_objective_and_ignores_legacy_objective_field() {
         "daily_budget_cents": 25000,
         "catalog": []
     }"#;
-    let parsed: ads_simulator::Advertiser = serde_json::from_str(legacy_json).unwrap();
+    let parsed: world_generator::Advertiser = serde_json::from_str(legacy_json).unwrap();
     assert_eq!(parsed.id, "advertiser-01");
     assert!(serde_json::to_value(&parsed).unwrap().get("objective").is_none());
 }
-

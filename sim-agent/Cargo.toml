@@ -7,7 +7,7 @@ rust-version = "1.88"
 [dependencies]
 ad-server = { path = "../ad-server" }
 ads-marketplace-simulation = { path = "../simulation" }
-ads-simulator = { path = ".." }
+world-generator = { path = "../world-generator" }
 clap = { version = "4.5", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }

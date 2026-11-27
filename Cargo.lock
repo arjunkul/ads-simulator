@@ -7,11 +7,11 @@ name = "ad-server"
 version = "0.1.0"
 dependencies = [
  "ads-ml",
- "ads-simulator",
  "rand",
  "rand_chacha",
  "serde",
  "serde_json",
+ "world-generator",
 ]
 
 [[package]]
@@ -20,12 +20,11 @@ version = "0.1.0"
 dependencies = [
  "ad-server",
  "ads-ml",
- "ads-simulator",
  "clap",
  "serde",
  "serde_json",
  "tempfile",
- "visit-simulator",
+ "world-generator",
 ]
 
 [[package]]
@@ -38,30 +37,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "ads-simulator"
-version = "0.1.0"
-dependencies = [
- "rand",
- "rand_chacha",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
 name = "ads-simulator-dashboard"
 version = "0.1.0"
 dependencies = [
  "ad-server",
  "ads-marketplace-simulation",
- "ads-simulator",
  "clap",
  "serde",
  "serde_json",
  "sim-agent",
  "simulation-analyzer",
  "tempfile",
- "visit-simulator",
+ "world-generator",
 ]
 
 [[package]]
@@ -389,12 +376,12 @@ version = "0.1.0"
 dependencies = [
  "ad-server",
  "ads-marketplace-simulation",
- "ads-simulator",
  "clap",
  "serde",
  "serde_json",
  "simulation-analyzer",
  "tempfile",
+ "world-generator",
 ]
 
 [[package]]
@@ -403,11 +390,11 @@ version = "0.1.0"
 dependencies = [
  "ad-server",
  "ads-marketplace-simulation",
- "ads-simulator",
  "clap",
  "serde",
  "serde_json",
  "tempfile",
+ "world-generator",
 ]
 
 [[package]]
@@ -464,20 +451,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
-name = "visit-simulator"
-version = "0.1.0"
-dependencies = [
- "ad-server",
- "ads-simulator",
- "clap",
- "rand",
- "rand_chacha",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
 name = "wasip2"
 version = "1.0.4+wasi-0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -506,6 +479,17 @@ name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
+
+[[package]]
+name = "world-generator"
+version = "0.1.0"
+dependencies = [
+ "rand",
+ "rand_chacha",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
 
 [[package]]
 name = "zerocopy"

@@ -14,7 +14,7 @@ use ad_server::{
     DEFAULT_RETRIEVAL, PacingStrategy, R1_SLATE_SIZE, RankerStrategy, RetrievalStrategy,
     ScoringStrategy,
 };
-use ads_simulator::{DEFAULT_SEED as DEFAULT_MARKETPLACE_SEED, generate_marketplace};
+use world_generator::{DEFAULT_SEED as DEFAULT_MARKETPLACE_SEED, generate_marketplace};
 use serde::{Deserialize, Deserializer, Serialize};
 use sim_agent::{
     ANALYSIS_JSON_FILENAME, AgentConfig, BudgetTimeSeries, DEFAULT_CPC_CENTS, DEFAULT_IMPRESSIONS,
@@ -758,7 +758,7 @@ mod tests {
     use std::sync::{Arc, RwLock};
 
     use ad_server::{AdResponse, AdServer, AdServerConfig};
-    use ads_simulator::generate_marketplace;
+    use world_generator::generate_marketplace;
     use sim_agent::{AgentConfig, render_budget_svg, run_simulation};
     use simulation_analyzer::SimulationAnalysis;
 

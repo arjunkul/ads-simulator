@@ -74,9 +74,9 @@ export const tests = [
       assert.ok(rootHasWorkspaceMsrv, 'Root Cargo.toml must declare rust-version = "1.88"');
 
       for (const member of [
+        "world-generator",
         "ml",
         "ad-server",
-        "visit-simulator",
         "simulation",
         "simulation-analyzer",
         "sim-agent",
@@ -123,15 +123,15 @@ export const tests = [
     tier: 2,
     area: AREA,
     features: ["F2", "F5"],
-    title: "tests/ directory contains exclusively Rust (.rs) test files",
+    title: "world-generator/tests/ directory contains exclusively Rust (.rs) test files",
     async fn(ctx) {
-      const testsDir = path.join(ctx.repoRoot, "tests");
-      assert.ok(fs.existsSync(testsDir), "tests/ directory must exist");
+      const testsDir = path.join(ctx.repoRoot, "world-generator", "tests");
+      assert.ok(fs.existsSync(testsDir), "world-generator/tests/ directory must exist");
       const entries = fs.readdirSync(testsDir, { withFileTypes: true });
       const files = entries.filter((e) => e.isFile()).map((e) => e.name);
-      assert.ok(files.includes("marketplace.rs"), "tests/marketplace.rs must exist");
+      assert.ok(files.includes("marketplace.rs"), "world-generator/tests/marketplace.rs must exist");
       const nonRs = files.filter((f) => !f.endsWith(".rs"));
-      assert.deepStrictEqual(nonRs, [], `Found non-Rust files in tests/: ${nonRs.join(", ")}`);
+      assert.deepStrictEqual(nonRs, [], `Found non-Rust files in world-generator/tests/: ${nonRs.join(", ")}`);
     },
   }),
 
@@ -140,12 +140,13 @@ export const tests = [
     tier: 2,
     area: AREA,
     features: ["F5", "F18"],
-    title: "README.md documents unified 7-crate workspace (ad-server, visit-simulator, simulation-analyzer, sim-agent, dashboard)",
+    title: "README.md documents unified 7-crate workspace (world-generator, ad-server, simulation-analyzer, sim-agent, dashboard)",
     async fn(ctx) {
       const readme = fs.readFileSync(path.join(ctx.repoRoot, "README.md"), "utf8");
       for (const crateName of [
+        "world-generator",
         "ad-server",
-        "visit-simulator",
+        "visit-generator",
         "simulation-analyzer",
         "sim-agent",
         "dashboard",

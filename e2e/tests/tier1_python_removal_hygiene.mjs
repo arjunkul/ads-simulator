@@ -41,11 +41,11 @@ export const tests = [
         false,
         "Legacy tests/test_marketplace_data.py must be deleted",
       );
-      const rustTestPath = path.join(ctx.repoRoot, "tests", "marketplace.rs");
-      assert.strictEqual(fs.existsSync(rustTestPath), true, "tests/marketplace.rs must be preserved");
+      const rustTestPath = path.join(ctx.repoRoot, "world-generator", "tests", "marketplace.rs");
+      assert.strictEqual(fs.existsSync(rustTestPath), true, "world-generator/tests/marketplace.rs must be preserved");
       const content = fs.readFileSync(rustTestPath, "utf8");
-      assert.ok(content.length > 500, "tests/marketplace.rs must be non-empty");
-      assert.ok(content.includes("generate_marketplace"), "tests/marketplace.rs must test generate_marketplace");
+      assert.ok(content.length > 500, "world-generator/tests/marketplace.rs must be non-empty");
+      assert.ok(content.includes("generate_marketplace"), "world-generator/tests/marketplace.rs must test generate_marketplace");
     },
   }),
 
@@ -108,9 +108,9 @@ export const tests = [
       const rootToml = fs.readFileSync(path.join(ctx.repoRoot, "Cargo.toml"), "utf8");
       assert.ok(/\[workspace\]/.test(rootToml), "Root Cargo.toml must declare [workspace]");
       for (const member of [
+        "world-generator",
         "ml",
         "ad-server",
-        "visit-simulator",
         "simulation",
         "simulation-analyzer",
         "sim-agent",

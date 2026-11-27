@@ -4,12 +4,19 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
 
+[[bin]]
+name = "ads-marketplace-simulation"
+path = "src/main.rs"
+
+[[bin]]
+name = "visit-generator"
+path = "src/bin/visit_generator.rs"
+
 [dependencies]
 ad-server = { path = "../ad-server" }
 ads-ml = { path = "../ml" }
-ads-simulator = { path = ".." }
 clap = { version = "4.5", features = ["derive"] }
-visit-simulator = { path = "../visit-simulator" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 tempfile = "3"
+world-generator = { path = "../world-generator" }

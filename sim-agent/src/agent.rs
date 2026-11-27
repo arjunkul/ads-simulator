@@ -12,7 +12,7 @@ use ad_server::{
     ScoringStrategy, StrategyProfile,
 };
 use ads_marketplace_simulation::{Activity, Config, OwnedReport, Report};
-use ads_simulator::{Marketplace, generate_marketplace};
+use world_generator::{Marketplace, generate_marketplace};
 use serde::{Deserialize, Serialize};
 use simulation_analyzer::{SimulationAnalysis, analyze_report};
 use tempfile::NamedTempFile;
@@ -20,13 +20,13 @@ use tempfile::NamedTempFile;
 /// Report and time-series schema version.
 pub const SCHEMA_VERSION: u32 = ads_marketplace_simulation::SCHEMA_VERSION;
 /// Monetary currency code (`"USD"`).
-pub const CURRENCY: &str = ads_simulator::CURRENCY;
+pub const CURRENCY: &str = world_generator::CURRENCY;
 /// Number of simulated days (`30`).
 pub const DAYS: usize = ads_marketplace_simulation::DAYS;
 /// Default unsigned simulation RNG seed (`42`).
 pub const DEFAULT_SEED: u64 = ads_marketplace_simulation::DEFAULT_SEED;
 /// Default signed marketplace generator seed (`42`).
-pub const DEFAULT_MARKETPLACE_SEED: i64 = ads_simulator::DEFAULT_SEED;
+pub const DEFAULT_MARKETPLACE_SEED: i64 = world_generator::DEFAULT_SEED;
 /// Default minimum upfront 30-day campaign budget in USD cents (`100_000` = `$1,000.00`).
 pub const DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS: u64 =
     ads_marketplace_simulation::DEFAULT_MIN_CAMPAIGN_BUDGET_CENTS;
@@ -1106,7 +1106,7 @@ mod tests {
     use std::path::Path;
 
     use ads_marketplace_simulation::OwnedReport;
-    use ads_simulator::generate_marketplace;
+    use world_generator::generate_marketplace;
     use tempfile::TempDir;
 
     use crate::agent::{

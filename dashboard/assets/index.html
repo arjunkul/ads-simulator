@@ -12,8 +12,8 @@
       <div>
         <h1>Ads Marketplace Simulator Dashboard</h1>
         <p class="hero-subtitle">
-          Live code-derived inventory of all 11 simulator pieces across 7 crates — featuring
-          <code>visit-simulator</code> (visit arrivals, slot generation &amp; visitor click oracle), standalone <code>ad-server</code> (Ranker Strategy <code>R1</code>: 20 random budgeted campaigns),
+          Live code-derived inventory of all 12 simulator pieces across 7 crates — featuring
+          <code>world-generator</code> (marketplace, <code>visit-generator</code> &amp; <code>user-activity-oracle</code>), standalone <code>ad-server</code> (Ranker Strategy <code>R1</code>: 20 random budgeted campaigns),
           <code>simulation-analyzer</code>, and interactive 30-day <code>sim-agent</code> budget runner &amp; SVG plotter.
         </p>
       </div>
@@ -32,12 +32,12 @@
         <div>
           <h2 id="pipeline-heading">Component Interaction Flowchart</h2>
           <p class="section-desc">
-            End-to-end runtime flowchart of how all 7 crates, 11 simulator pieces, decision branches, the visit simulator &amp; click oracle, Ad-Server (R1), Simulation Analyzer, and live feedback loops interact.
+            End-to-end runtime flowchart of how all 7 crates, 12 simulator pieces, decision branches, the world generator (visit generator &amp; user activity oracle), Ad-Server (R1), Simulation Analyzer, and live feedback loops interact.
           </p>
         </div>
         <div class="filter-pills" id="flowchart-view-toggle" role="tablist" aria-label="Architecture diagram view">
           <button type="button" class="pill-btn active" id="view-flowchart-btn" role="tab" aria-selected="true">Interaction Flowchart</button>
-          <button type="button" class="pill-btn" id="view-pipeline-btn" role="tab" aria-selected="false">11-Piece Dataflow</button>
+          <button type="button" class="pill-btn" id="view-pipeline-btn" role="tab" aria-selected="false">12-Piece Dataflow</button>
         </div>
       </div>
 
@@ -74,7 +74,7 @@
       <div class="section-header">
         <div>
           <h2 id="pieces-heading">Per-Piece Feature &amp; Gap Explorer</h2>
-          <p class="section-desc" id="pieces-count-desc">Showing all 11 simulator pieces</p>
+          <p class="section-desc" id="pieces-count-desc">Showing all 12 simulator pieces</p>
         </div>
       </div>
       <div class="controls-bar">

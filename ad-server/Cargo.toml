@@ -6,7 +6,7 @@ rust-version = "1.88"
 
 [dependencies]
 ads-ml = { path = "../ml" }
-ads-simulator = { path = ".." }
+world-generator = { path = "../world-generator" }
 rand = "0.9"
 rand_chacha = "0.9"
 serde = { version = "1", features = ["derive"] }

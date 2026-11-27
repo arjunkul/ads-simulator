@@ -256,10 +256,10 @@ export const tests = [
     area: "cross-feature",
     areas: ["marketplace-generator", "dashboard-catalog-api"],
     features: ["F6", "F15"],
-    title: "GET /api/marketplace?seed=1337 matches exact stats computed from ads-simulator --seed 1337 CLI",
+    title: "GET /api/marketplace?seed=1337 matches exact stats computed from world-generator --seed 1337 CLI",
     async fn(ctx) {
       const mktDir = path.join(ctx.tmpDir, "mkt-1337");
-      await runBinaryOk("ads-simulator", ["--seed", "1337", "--output-dir", mktDir]);
+      await runBinaryOk("world-generator", ["--seed", "1337", "--output-dir", mktDir]);
       const mp = readJsonFile(path.join(mktDir, "marketplace.json"));
       validateMarketplaceJson(mp, { expectedSeed: 1337 });
 
@@ -411,7 +411,7 @@ export const tests = [
       const runPos = path.join(ctx.tmpDir, "run-pos");
       const exportNeg = path.join(ctx.tmpDir, "export-neg");
 
-      await runBinaryOk("ads-simulator", ["--seed", "-42", "--output-dir", mktNeg]);
+      await runBinaryOk("world-generator", ["--seed", "-42", "--output-dir", mktNeg]);
       assert.strictEqual(readJsonFile(path.join(mktNeg, "marketplace.json")).seed, -42);
 
       await runBinaryOk("sim-agent", [
@@ -474,7 +474,7 @@ export const tests = [
       const rawSimPath = path.join(ctx.tmpDir, "a", "b", "c", "raw_simulation.json");
       const agentDir = path.join(ctx.tmpDir, "x", "y", "z", "agent_out");
 
-      await runBinaryOk("ads-simulator", ["--seed", "42", "--output-dir", mktDir]);
+      await runBinaryOk("world-generator", ["--seed", "42", "--output-dir", mktDir]);
       await runBinaryOk("ads-marketplace-simulation", [
         "--marketplace", path.join(mktDir, "marketplace.json"),
         "--output", rawSimPath,

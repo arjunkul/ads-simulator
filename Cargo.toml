@@ -1,9 +1,8 @@
 [workspace]
 members = [
-    ".",
+    "world-generator",
     "ml",
     "ad-server",
-    "visit-simulator",
     "simulation",
     "simulation-analyzer",
     "sim-agent",
@@ -11,15 +10,6 @@ members = [
 ]
 resolver = "3"
 
-[package]
-name = "ads-simulator"
-version = "0.1.0"
+[workspace.package]
 edition = "2024"
 rust-version = "1.88"
-
-[dependencies]
-rand = "0.9"
-rand_chacha = "0.9"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-tempfile = "3"
