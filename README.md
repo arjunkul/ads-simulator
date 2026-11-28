@@ -2,6 +2,10 @@
 
 An ads marketplace simulator workspace modeling synthetic world generation via `world-generator` (marketplace data, user-independent `visit-generator`, and `user-activity-oracle`), a pluggable 5-axis `ad-server` (**Retrieval × Pacing × Bidding × Scoring × Ranking**), daily CTR model training via `ads-ml` (`Score-R1`), automated post-run simulation analysis, an autonomous `sim-agent` 30-day budget plotter, and an interactive feature/flowchart/analysis dashboard.
 
+## System Architecture
+
+![Ads Simulator System Architecture](docs/architecture.svg)
+
 ## Workspace Crates
 
 | Crate | Path | Binary | Purpose |
