@@ -1,6 +1,14 @@
 # Ads Marketplace Simulator
 
-An ads marketplace simulator workspace modeling synthetic world generation via `world-generator` (marketplace data, user-independent `visit-generator`, and `user-activity-oracle`), a pluggable 5-axis `ad-server` (**Retrieval × Pacing × Bidding × Scoring × Ranking**), daily CTR model training via `ads-ml` (`Score-R1`), automated post-run simulation analysis, an autonomous `sim-agent` 30-day budget plotter, and an interactive feature/flowchart/analysis dashboard.
+This is an Ads Marketplace simulator that contains
+1. A synthetic world of users who generate activities such as visits to a website and their interactions
+2. A pluggable multi-dimensional `ad-server` that contains standard modules (**Retrieval × Pacing × Bidding × Scoring × Ranking**)
+3. ML models for ads ranking, marketplace dynamics
+4. Automated simulation analyses
+
+It's meant to provide a surface to experiment with what-if scenarios and mechanisms to optimize for them. It's mostly built using Antigravity and other AI tools. 
+
+More here: https://arjunkul.com/posts/ads-marketplace/
 
 ## System Architecture
 
