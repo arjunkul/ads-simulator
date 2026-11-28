@@ -1,6 +1,6 @@
 # Ads Marketplace Simulator
 
-This is an Ads Marketplace simulator that contains
+This is an Online Ads Marketplace simulator that models an online property.
 1. A synthetic world of users who generate activities such as visits to a website and their interactions
 2. A pluggable multi-dimensional `ad-server` that contains standard modules (**Retrieval × Pacing × Bidding × Scoring × Ranking**)
 3. ML models for ads ranking, marketplace dynamics
