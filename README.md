@@ -11,8 +11,15 @@ It's meant to provide a surface to experiment with what-if scenarios and mechani
 More here: https://arjunkul.com/posts/ads-marketplace/
 
 ## System Architecture
-
 ![Ads Simulator System Architecture](docs/architecture.svg)
+
+## Usage
+Recommended usage: 
+1. Setup Antigravity with a remote connection and point to this repo
+2. Run the various simulation profiles and examine how results change as one changes the world and marketplace
+3. Test new profiles, or modify the world and or marketplace systems
+
+[[AI Generated Documentation]]
 
 ## Workspace Crates
 
