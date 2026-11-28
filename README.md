@@ -1,12 +1,12 @@
 # Ads Marketplace Simulator
 
-This is an Online Ads Marketplace simulator that models an online property.
+This is an Online Ads Marketplace simulator that models an online property and an ads marketplace. It's meant for educational purposes and it based on papers 
 1. A synthetic world of users who generate activities such as visits to a website and their interactions
 2. A pluggable multi-dimensional `ad-server` that contains standard modules (**Retrieval × Pacing × Bidding × Scoring × Ranking**)
 3. ML models for ads ranking, marketplace dynamics
 4. Automated simulation analyses
 
-It's meant to provide a surface to experiment with what-if scenarios and mechanisms to optimize for them. It's mostly built using Antigravity and other AI tools. 
+It's meant to provide a surface to experiment with what-if scenarios and mechanisms to optimize for them. It's mostly built using Antigravity and other AI tools along with a lot of human taste and guidance.
 
 More here: https://arjunkul.com/posts/ads-marketplace/
 
@@ -15,9 +15,9 @@ More here: https://arjunkul.com/posts/ads-marketplace/
 
 ## Usage
 Recommended usage: 
-1. Setup Antigravity with a remote connection and point to this repo
-2. Run the various simulation profiles and examine how results change as one changes the world and marketplace
-3. Test new profiles, or modify the world and or marketplace systems
+1. Setup Antigravity (AGY) with a remote connection and point to this repo
+2. Ask AGY to run the various simulation profiles and examine how results change as one changes the world and marketplace
+3. Use AGY to develop and run new simulation profiles, or modify the world and or marketplace systems
 
 [[AI Generated Documentation]]
 
